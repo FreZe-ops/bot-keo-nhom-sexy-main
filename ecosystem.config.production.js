@@ -1,3 +1,8 @@
+const path = require("path");
+const pythonInterpreter = process.platform === "win32"
+  ? (process.env.PYTHON_PATH || "C:/tools/python/python.exe")
+  : "./venv/bin/python";
+
 /** PM2 production — server + 4 session + 4 bot (mỗi session 1 nhóm Telegram) */
 module.exports = {
   apps: [
@@ -99,7 +104,7 @@ module.exports = {
     {
       name: "bot_sexy_1",
       script: "bot.py",
-      interpreter: "./venv/bin/python",
+      interpreter: pythonInterpreter,
       cwd: __dirname,
       instances: 1,
       autorestart: true,
@@ -115,7 +120,7 @@ module.exports = {
     {
       name: "bot_sexy_2",
       script: "bot.py",
-      interpreter: "./venv/bin/python",
+      interpreter: pythonInterpreter,
       cwd: __dirname,
       instances: 1,
       autorestart: true,
@@ -131,7 +136,7 @@ module.exports = {
     {
       name: "bot_sexy_3",
       script: "bot.py",
-      interpreter: "./venv/bin/python",
+      interpreter: pythonInterpreter,
       cwd: __dirname,
       instances: 1,
       autorestart: true,
@@ -147,7 +152,7 @@ module.exports = {
     {
       name: "bot_sexy_4",
       script: "bot.py",
-      interpreter: "./venv/bin/python",
+      interpreter: pythonInterpreter,
       cwd: __dirname,
       instances: 1,
       autorestart: true,
@@ -163,7 +168,7 @@ module.exports = {
     {
       name: "bot_sexy_5",
       script: "bot.py",
-      interpreter: "./venv/bin/python",
+      interpreter: pythonInterpreter,
       cwd: __dirname,
       instances: 1,
       autorestart: true,

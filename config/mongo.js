@@ -3,7 +3,6 @@ mongoose.set("strictQuery", true);
 require("dotenv").config();
 
 const mongoOptions = {
-  authSource: "admin",
   maxPoolSize: 10,
   minPoolSize: 2,
   serverSelectionTimeoutMS: 15000,
@@ -14,7 +13,12 @@ const mongoOptions = {
 
 async function connect() {
   try {
-    await mongoose.connect(process.env.URL_CONNECT_MONGODB, mongoOptions);
+    const uri = process.env.URL_CONNECT_MONGODB || "mongodb://127.0.0.1:27017/db_bacarat";
+    const opts = { ...mongoOptions };
+    if (uri.includes("@") && !uri.includes("authSource")) {
+      opts.authSource = "admin";
+    }
+    await mongoose.connect(uri, opts);
     console.info("connect database db_bacarat success");
   } catch (error) {
     console.error("MongoDB connection error:", error.message);

@@ -1,0 +1,162 @@
+{
+  "apps": [
+    {
+      "name": "server_sexy",
+      "script": "server.js",
+      "cwd": "C:/apps/bot-keo-nhom-bcr-main",
+      "node_args": "--max-old-space-size=1536",
+      "interpreter_args": "-r dotenv/config",
+      "instances": 1,
+      "exec_mode": "fork",
+      "autorestart": true,
+      "watch": false,
+      "min_uptime": "30s",
+      "max_restarts": 15,
+      "restart_delay": 8000,
+      "max_memory_restart": "1536M",
+      "env": {
+        "DOTENV_CONFIG_PATH": "C:/apps/bot-keo-nhom-bcr-main/.env"
+      }
+    },
+    {
+      "name": "session_sexy_1",
+      "script": "servicePuppeteer/session.js",
+      "cwd": "C:/apps/bot-keo-nhom-bcr-main",
+      "node_args": "--max-old-space-size=1536",
+      "interpreter_args": "-r dotenv/config",
+      "instances": 1,
+      "exec_mode": "fork",
+      "autorestart": true,
+      "watch": false,
+      "min_uptime": "60s",
+      "max_restarts": 10,
+      "restart_delay": 10000,
+      "max_memory_restart": "1536M",
+      "env": {
+        "ACCOUNT_INDEX": "1",
+        "PREFERRED_TABLE": "C01",
+        "DOTENV_CONFIG_PATH": "C:/apps/bot-keo-nhom-bcr-main/.env"
+      }
+    },
+    {
+      "name": "session_sexy_2",
+      "script": "servicePuppeteer/session.js",
+      "cwd": "C:/apps/bot-keo-nhom-bcr-main",
+      "node_args": "--max-old-space-size=1536",
+      "interpreter_args": "-r dotenv/config",
+      "instances": 1,
+      "exec_mode": "fork",
+      "autorestart": true,
+      "watch": false,
+      "min_uptime": "60s",
+      "max_restarts": 10,
+      "restart_delay": 10000,
+      "max_memory_restart": "1536M",
+      "env": {
+        "ACCOUNT_INDEX": "2",
+        "PREFERRED_TABLE": "C03",
+        "DOTENV_CONFIG_PATH": "C:/apps/bot-keo-nhom-bcr-main/.env"
+      }
+    },
+    {
+      "name": "session_sexy_3",
+      "script": "servicePuppeteer/session.js",
+      "cwd": "C:/apps/bot-keo-nhom-bcr-main",
+      "node_args": "--max-old-space-size=1536",
+      "interpreter_args": "-r dotenv/config",
+      "instances": 1,
+      "exec_mode": "fork",
+      "autorestart": true,
+      "watch": false,
+      "min_uptime": "60s",
+      "max_restarts": 10,
+      "restart_delay": 10000,
+      "max_memory_restart": "1536M",
+      "env": {
+        "ACCOUNT_INDEX": "3",
+        "PREFERRED_TABLE": "C05",
+        "DOTENV_CONFIG_PATH": "C:/apps/bot-keo-nhom-bcr-main/.env"
+      }
+    },
+    {
+      "name": "session_sexy_4",
+      "script": "servicePuppeteer/session.js",
+      "cwd": "C:/apps/bot-keo-nhom-bcr-main",
+      "node_args": "--max-old-space-size=1536",
+      "interpreter_args": "-r dotenv/config",
+      "instances": 1,
+      "exec_mode": "fork",
+      "autorestart": true,
+      "watch": false,
+      "min_uptime": "60s",
+      "max_restarts": 10,
+      "restart_delay": 10000,
+      "max_memory_restart": "1536M",
+      "env": {
+        "ACCOUNT_INDEX": "4",
+        "PREFERRED_TABLE": "C08",
+        "DOTENV_CONFIG_PATH": "C:/apps/bot-keo-nhom-bcr-main/.env"
+      }
+    },
+    {
+      "name": "bot_sexy_1",
+      "script": "bot.py",
+      "interpreter": "C:/tools/python/python.exe",
+      "cwd": "C:/apps/bot-keo-nhom-bcr-main",
+      "instances": 1,
+      "autorestart": true,
+      "watch": false,
+      "max_restarts": 10,
+      "restart_delay": 8000,
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "NAME_SERVICE": "NS1"
+      }
+    },
+    {
+      "name": "bot_sexy_2",
+      "script": "bot.py",
+      "interpreter": "C:/tools/python/python.exe",
+      "cwd": "C:/apps/bot-keo-nhom-bcr-main",
+      "instances": 1,
+      "autorestart": true,
+      "watch": false,
+      "max_restarts": 10,
+      "restart_delay": 8000,
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "NAME_SERVICE": "NS2"
+      }
+    },
+    {
+      "name": "bot_sexy_3",
+      "script": "bot.py",
+      "interpreter": "C:/tools/python/python.exe",
+      "cwd": "C:/apps/bot-keo-nhom-bcr-main",
+      "instances": 1,
+      "autorestart": true,
+      "watch": false,
+      "max_restarts": 10,
+      "restart_delay": 8000,
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "NAME_SERVICE": "NS3"
+      }
+    },
+    {
+      "name": "bot_sexy_4",
+      "script": "bot.py",
+      "interpreter": "C:/tools/python/python.exe",
+      "cwd": "C:/apps/bot-keo-nhom-bcr-main",
+      "instances": 1,
+      "autorestart": true,
+      "watch": false,
+      "max_restarts": 10,
+      "restart_delay": 8000,
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "NAME_SERVICE": "NS4"
+      }
+    }
+  ]
+}

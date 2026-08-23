@@ -1,14 +1,12 @@
 const path = require("path");
-const pythonInterpreter = process.platform === "win32"
-  ? (process.env.PYTHON_PATH || "C:/tools/python/python.exe")
-  : "./venv/bin/python";
+const pythonInterpreter = "C:/tools/python/python.exe";
 
-/** PM2 production — server + 4 session + 4 bot (mỗi session 1 nhóm Telegram) */
 module.exports = {
   apps: [
     {
       name: "server_sexy",
       script: "./server.js",
+      cwd: __dirname,
       node_args: "--max-old-space-size=1536",
       interpreter_args: "-r dotenv/config",
       instances: 1,
@@ -19,11 +17,14 @@ module.exports = {
       max_restarts: 15,
       restart_delay: 8000,
       max_memory_restart: "1536M",
-      env_file: ".env",
+      env: {
+        DOTENV_CONFIG_PATH: path.join(__dirname, ".env"),
+      },
     },
     {
       name: "session_sexy_1",
       script: "./servicePuppeteer/session.js",
+      cwd: __dirname,
       node_args: "--max-old-space-size=1536",
       interpreter_args: "-r dotenv/config",
       instances: 1,
@@ -34,12 +35,16 @@ module.exports = {
       max_restarts: 10,
       restart_delay: 10000,
       max_memory_restart: "1536M",
-      env_file: ".env",
-      env: { ACCOUNT_INDEX: "1" },
+      env: {
+        ACCOUNT_INDEX: "1",
+        PREFERRED_TABLE: "C01",
+        DOTENV_CONFIG_PATH: path.join(__dirname, ".env"),
+      },
     },
     {
       name: "session_sexy_2",
       script: "./servicePuppeteer/session.js",
+      cwd: __dirname,
       node_args: "--max-old-space-size=1536",
       interpreter_args: "-r dotenv/config",
       instances: 1,
@@ -50,12 +55,16 @@ module.exports = {
       max_restarts: 10,
       restart_delay: 10000,
       max_memory_restart: "1536M",
-      env_file: ".env",
-      env: { ACCOUNT_INDEX: "2" },
+      env: {
+        ACCOUNT_INDEX: "2",
+        PREFERRED_TABLE: "C03",
+        DOTENV_CONFIG_PATH: path.join(__dirname, ".env"),
+      },
     },
     {
       name: "session_sexy_3",
       script: "./servicePuppeteer/session.js",
+      cwd: __dirname,
       node_args: "--max-old-space-size=1536",
       interpreter_args: "-r dotenv/config",
       instances: 1,
@@ -66,12 +75,16 @@ module.exports = {
       max_restarts: 10,
       restart_delay: 10000,
       max_memory_restart: "1536M",
-      env_file: ".env",
-      env: { ACCOUNT_INDEX: "3" },
+      env: {
+        ACCOUNT_INDEX: "3",
+        PREFERRED_TABLE: "C05",
+        DOTENV_CONFIG_PATH: path.join(__dirname, ".env"),
+      },
     },
     {
       name: "session_sexy_4",
       script: "./servicePuppeteer/session.js",
+      cwd: __dirname,
       node_args: "--max-old-space-size=1536",
       interpreter_args: "-r dotenv/config",
       instances: 1,
@@ -82,8 +95,11 @@ module.exports = {
       max_restarts: 10,
       restart_delay: 10000,
       max_memory_restart: "1536M",
-      env_file: ".env",
-      env: { ACCOUNT_INDEX: "4" },
+      env: {
+        ACCOUNT_INDEX: "4",
+        PREFERRED_TABLE: "C08",
+        DOTENV_CONFIG_PATH: path.join(__dirname, ".env"),
+      },
     },
     {
       name: "bot_sexy_1",
@@ -95,7 +111,6 @@ module.exports = {
       watch: false,
       max_restarts: 10,
       restart_delay: 8000,
-      env_file: ".env",
       env: {
         PYTHONUNBUFFERED: "1",
         NAME_SERVICE: "NS1",
@@ -111,7 +126,6 @@ module.exports = {
       watch: false,
       max_restarts: 10,
       restart_delay: 8000,
-      env_file: ".env",
       env: {
         PYTHONUNBUFFERED: "1",
         NAME_SERVICE: "NS2",
@@ -127,7 +141,6 @@ module.exports = {
       watch: false,
       max_restarts: 10,
       restart_delay: 8000,
-      env_file: ".env",
       env: {
         PYTHONUNBUFFERED: "1",
         NAME_SERVICE: "NS3",
@@ -143,7 +156,6 @@ module.exports = {
       watch: false,
       max_restarts: 10,
       restart_delay: 8000,
-      env_file: ".env",
       env: {
         PYTHONUNBUFFERED: "1",
         NAME_SERVICE: "NS4",

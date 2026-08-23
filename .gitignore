@@ -4,6 +4,8 @@
 # File dữ liệu runtime
 posts.json
 bot.lock
+*.lock
+bot_*.lock
 
 # File log / backup
 *.log
