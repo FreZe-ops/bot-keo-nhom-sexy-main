@@ -110,6 +110,14 @@ def get_latest_local_screenshot_for_table(table_name="C01"):
         pass
     return None
 
+API_KEY = os.getenv('API_KEY', 'your-static-api-key')
+
+def get_api_headers():
+    return {
+        'User-Agent': 'Mozilla/5.0',
+        'x-api-key': API_KEY,
+    }
+
 async def get_live_table_prediction(table_name="C01", name_service="NS1"):
     """
     Lấy kèo dự đoán thật từ session / bàn cược đang chạy trên Playwright.
@@ -117,7 +125,7 @@ async def get_live_table_prediction(table_name="C01", name_service="NS1"):
     try:
         q = urllib.parse.quote(str(table_name).strip().upper())
         url = f"{API_BASE_URL.rstrip('/')}/predict/get-table-by-name?tableName={q}"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        req = urllib.request.Request(url, headers=get_api_headers())
         loop = asyncio.get_event_loop()
         res_text = await loop.run_in_executor(
             None,
@@ -151,7 +159,7 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
     
     while time.time() - start_time < max_wait_s:
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            req = urllib.request.Request(url, headers=get_api_headers())
             loop = asyncio.get_event_loop()
             res_text = await loop.run_in_executor(
                 None,
