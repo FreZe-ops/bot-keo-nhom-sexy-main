@@ -39,6 +39,7 @@ def log(msg, bot_name="BOT"):
 ACCOUNTS_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tele_forward_accounts.json')
 SCREENSHOT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'public/screenshots')
 API_BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:3201')
+API_KEY = os.getenv('API_KEY', 'your-static-api-key')
 
 RESULT_IMAGE_DIRS = {
     'wincai': 'images/wincai',
@@ -99,7 +100,6 @@ def get_latest_local_screenshot_for_table(table_name="C01"):
         ]
         if not files:
             return None
-        # Ưu tiên ảnh của đúng bàn đó
         tbl_files = [f for f in files if f"_{tbl_norm}_" in f.lower() or f"{tbl_norm}_" in f.lower()]
         target_list = tbl_files if tbl_files else files
         target_list.sort(key=lambda x: os.path.getmtime(x), reverse=True)
@@ -110,13 +110,80 @@ def get_latest_local_screenshot_for_table(table_name="C01"):
         pass
     return None
 
-API_KEY = os.getenv('API_KEY', 'your-static-api-key')
-
 def get_api_headers():
     return {
         'User-Agent': 'Mozilla/5.0',
         'x-api-key': API_KEY,
     }
+
+async def get_healthy_active_sessions():
+    """
+    Quét toàn bộ các session cào (NS1..NS4) để tìm các bàn đang chạy mượt,
+    không bị treo, không bị paused, và có ảnh chụp mới nhất (< 120s).
+    """
+    healthy = []
+    loop = asyncio.get_event_loop()
+    
+    def probe():
+        res_list = []
+        for ns in ['NS1', 'NS2', 'NS3', 'NS4']:
+            try:
+                url = f"{API_BASE_URL.rstrip('/')}/api/get-active-table?nameService={ns}"
+                req = urllib.request.Request(url, headers=get_api_headers())
+                with urllib.request.urlopen(req, timeout=2.5) as r:
+                    data = json.loads(r.read().decode('utf-8'))
+                    paused = data.get('paused', False)
+                    table = str(data.get('activeTable') or '').upper().strip()
+                    
+                    if table and table not in ('NONE', 'LOBBY') and not paused:
+                        # Kiểm tra ảnh chụp bàn mới nhất
+                        shot_url = f"{API_BASE_URL.rstrip('/')}/api/latest-screenshot?tableName={urllib.parse.quote(table)}"
+                        shot_req = urllib.request.Request(shot_url, headers=get_api_headers())
+                        with urllib.request.urlopen(shot_req, timeout=2.5) as sr:
+                            sdata = json.loads(sr.read().decode('utf-8'))
+                            if sdata.get('success') and sdata.get('data'):
+                                sinfo = sdata['data']
+                                stamp = int(sinfo.get('stampTime') or 0)
+                                age_s = ((time.time() * 1000) - stamp) / 1000.0 if stamp else 9999
+                                filepath = sinfo.get('filepath')
+                                # Nếu ảnh mới trong vòng 150s và là file thật -> Session khỏe mạnh
+                                if age_s < 150 and is_real_screenshot_file(filepath):
+                                    res_list.append({
+                                        'name_service': ns,
+                                        'table': table,
+                                        'age_s': age_s
+                                    })
+            except Exception:
+                pass
+        return res_list
+
+    try:
+        healthy = await loop.run_in_executor(None, probe)
+    except Exception as e:
+        log(f"[WARN] Lỗi kiểm tra session health: {e}")
+    return healthy
+
+async def select_next_healthy_session(previous_table=None):
+    """
+    Chọn 1 bàn cào mượt mà nhất, tự động đổi sang bàn khác với ca trước.
+    """
+    healthy = await get_healthy_active_sessions()
+    
+    if not healthy:
+        log(f"[WARN] Không tìm thấy session nào đạt chuẩn sức khỏe. Fallback về Bàn C01 (NS1).")
+        return 'NS1', 'C01'
+
+    # Sắp xếp theo độ tươi mới của ảnh
+    healthy.sort(key=lambda x: x['age_s'])
+
+    # Lọc các bàn khác với bàn ở ca trước (để đổi bàn liên tục mỗi 10 phút)
+    candidates = [h for h in healthy if h['table'] != str(previous_table).upper().strip()]
+    if not candidates:
+        candidates = healthy  # Nếu chỉ có 1 bàn duy nhất thì vẫn dùng bàn đó
+
+    chosen = random.choice(candidates)
+    log(f"[DYNAMIC ROTATION] Đã chọn Session {chosen['name_service']} - Bàn {chosen['table']} (Ảnh mới cách {chosen['age_s']:.1f}s, khác ca trước: '{previous_table}')")
+    return chosen['name_service'], chosen['table']
 
 async def get_live_table_prediction(table_name="C01", name_service="NS1"):
     """
@@ -150,7 +217,7 @@ async def get_live_table_prediction(table_name="C01", name_service="NS1"):
     is_cai = random.choice([True, False])
     return ('B', '🔴 CÁI') if is_cai else ('P', '🔵 CON')
 
-async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", max_wait_s=30):
+async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", max_wait_s=35):
     """
     Chờ kết quả ván thật từ bàn và lấy ảnh chụp thật vừa hoàn thành.
     """
@@ -206,6 +273,7 @@ class TelegramForwardBot:
         self.session_table = config.get('session_table', 'C01')
         self.name_service = config.get('name_service', 'NS1')
         self.source_username = config.get('source_username', 'frezeit')
+        self.last_used_table = None
         
         phone_digits = ''.join(c for c in self.phone if c.isdigit())
         self.session_name = f'user_session_{phone_digits}' if phone_digits else f'user_session_{self.bot_id}'
@@ -293,7 +361,13 @@ class TelegramForwardBot:
             self.log(f"[ERROR] Không tìm thấy nhóm ID={self.group_id}")
             return
 
-        self.log(f"BẮT ĐẦU PHIÊN (Ăn theo Session: {self.name_service} - Bàn {self.session_table})")
+        # 0. TỰ ĐỘNG CHỌN BÀN KHỎE MẠNH VÀ XOAY TUA BÀN KHÁC MỖI CA 10P
+        selected_ns, selected_table = await select_next_healthy_session(self.last_used_table)
+        self.name_service = selected_ns
+        self.session_table = selected_table
+        self.last_used_table = selected_table
+
+        self.log(f"BẮT ĐẦU PHIÊN (Đồng bộ Session: {self.name_service} - Bàn {self.session_table})")
 
         async def forward_idx(index, label):
             if index < len(messages_to_send):
@@ -317,7 +391,7 @@ class TelegramForwardBot:
             except Exception as ex:
                 self.log(f"[LỖI SEND TEXT]: {ex}")
 
-        # 1. Forward 4 tin mở đầu (tin 1 -> 4, index 0, 1, 2, 3 từ @frezeit)
+        # 1. Forward 4 tin mở đầu (tin 1 -> 4, index 0, 1, 2, 3 từ @frezeit, cách nhau 20s)
         opening_order = self.config.get('opening_order', [0, 1, 2, 3])
         opening_delays = self.config.get('opening_delays', [20, 20, 20, 20])
         for step_num, idx in enumerate(opening_order):
@@ -326,13 +400,13 @@ class TelegramForwardBot:
             await asyncio.sleep(delay)
 
         # 2. Chờ 20s trước, sau đó mới lấy tin hô Con / Cái trực tiếp từ bàn đó
-        self.log(f"Chờ 20s trước khi lấy lệnh hô trực tiếp từ bàn {self.session_table}...")
+        self.log(f"Chờ 20s trước khi lấy lệnh hô trực tiếp từ bàn {self.session_table} ({self.name_service})...")
         await asyncio.sleep(20)
 
         bet_side, bet_text = await get_live_table_prediction(self.session_table, self.name_service)
         await send_text(bet_text, f"Đã gửi tin HÔ (lấy trực tiếp theo bàn {self.session_table})")
 
-        # 3. Lấy ẢNH THẬT và kết quả thực tế của Bàn C01 vừa xong
+        # 3. Lấy ẢNH THẬT và kết quả thực tế của Bàn vừa xong
         real_screenshot, winner = await wait_for_table_screenshot_and_result(self.session_table, bet_side)
         if not real_screenshot:
             res_type = "wincai" if bet_side == 'B' else "wincon"
@@ -347,7 +421,7 @@ class TelegramForwardBot:
 
         await asyncio.sleep(20)
 
-        # 4. Trả tin kết quả theo đúng ván thật của bàn C01:
+        # 4. Trả tin kết quả theo đúng ván thật của bàn:
         # Nếu trùng kèo -> 🎉 Húp +10%, Nếu hòa -> 🤝 Hòa +0%, Nếu ngược -> ❌ Thua -10%
         if winner == bet_side or winner in ('WIN', 'W'):
             result_text = "🎉 Húp +10%"
@@ -469,7 +543,7 @@ async def main():
     else:
         target_accounts = accounts
 
-    log(f"=== KHỞI ĐỘNG HỆ THỐNG FORWARD THEO SESSION VỚI {len(target_accounts)} TÀI KHOẢN ===")
+    log(f"=== KHỞI ĐỘNG HỆ THỐNG FORWARD ĐA SESSION VỚI {len(target_accounts)} TÀI KHOẢN ===")
     bots = []
     for acc in target_accounts:
         b = TelegramForwardBot(acc)
@@ -483,7 +557,7 @@ async def main():
 
     # Chạy ngay 1 ca test nếu bật --run-now
     if args.run_now:
-        log("[RUN_NOW] Bắt đầu chạy ngay 1 ca kiểm tra đồng bộ theo Session sảnh game...")
+        log("[RUN_NOW] Bắt đầu chạy ngay 1 ca kiểm tra đồng bộ động theo Session khỏe mạnh...")
         try:
             await run_round_for_bots(bots)
         except Exception as e:
