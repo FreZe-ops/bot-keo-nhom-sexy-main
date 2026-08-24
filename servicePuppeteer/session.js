@@ -2854,17 +2854,19 @@ async function enterTargetTable(
           const sticky = normTableCode(process.env.PREFERRED_TABLE || "");
           const defaults = { 1: "C01", 2: "C03", 3: "C05", 4: "C08", 5: "C10" };
           const wantFirst = sticky || defaults[accountIdx] || null;
-          if (wantFirst && freeCodes.includes(wantFirst)) {
+          if (attempt === 0 && wantFirst && freeCodes.includes(wantFirst)) {
             prefer = wantFirst;
             console.log(`[ENTER] ưu tiên ${prefer} cho ${account.nameServiceSocket}`);
           } else {
+            const candidateCodes = (attempt > 0 && wantFirst) ? freeCodes.filter(c => c !== wantFirst) : freeCodes;
+            const validCandidates = candidateCodes.length ? candidateCodes : freeCodes;
             const rotated = [
-              ...freeCodes.slice(pickOffset),
-              ...freeCodes.slice(0, pickOffset),
+              ...validCandidates.slice(pickOffset),
+              ...validCandidates.slice(0, pickOffset),
             ];
-            prefer = rotated[attempt % Math.max(rotated.length, 1)] || pickAnyFreeTable(freeCodes, pickOffset);
+            prefer = rotated[attempt % Math.max(rotated.length, 1)] || pickAnyFreeTable(validCandidates, pickOffset);
             if (prefer) {
-              console.log(`[ENTER] bàn trống → ${prefer}`);
+              console.log(`[ENTER] bàn trống → ${prefer} (lần thử ${attempt + 1})`);
             } else {
               console.log(`[ENTER] chưa có bàn trống — chờ quét lại`);
               await helper.delay(1500);
