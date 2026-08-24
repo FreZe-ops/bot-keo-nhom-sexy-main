@@ -319,16 +319,18 @@ class TelegramForwardBot:
 
         # 1. Forward 4 tin mở đầu (tin 1 -> 4, index 0, 1, 2, 3 từ @frezeit)
         opening_order = self.config.get('opening_order', [0, 1, 2, 3])
-        opening_delays = self.config.get('opening_delays', [5, 5, 5, 5])
+        opening_delays = self.config.get('opening_delays', [20, 20, 20, 20])
         for step_num, idx in enumerate(opening_order):
             await forward_idx(idx, f"Tin mở đầu {step_num + 1}/{len(opening_order)}")
-            delay = opening_delays[step_num] if step_num < len(opening_delays) else 5
+            delay = opening_delays[step_num] if step_num < len(opening_delays) else 20
             await asyncio.sleep(delay)
 
-        # 2. Lấy kèo hô THẬT từ Session (Bàn C01): 🔵 CON hoặc 🔴 CÁI
+        # 2. Chờ 20s trước, sau đó mới lấy tin hô Con / Cái trực tiếp từ bàn đó
+        self.log(f"Chờ 20s trước khi lấy lệnh hô trực tiếp từ bàn {self.session_table}...")
+        await asyncio.sleep(20)
+
         bet_side, bet_text = await get_live_table_prediction(self.session_table, self.name_service)
-        await send_text(bet_text, f"Đã gửi tin HÔ (theo bàn {self.session_table})")
-        await asyncio.sleep(15)
+        await send_text(bet_text, f"Đã gửi tin HÔ (lấy trực tiếp theo bàn {self.session_table})")
 
         # 3. Lấy ẢNH THẬT và kết quả thực tế của Bàn C01 vừa xong
         real_screenshot, winner = await wait_for_table_screenshot_and_result(self.session_table, bet_side)
@@ -343,7 +345,7 @@ class TelegramForwardBot:
             except Exception as ex:
                 self.log(f"[LỖI GỬI ẢNH]: {ex}")
 
-        await asyncio.sleep(5)
+        await asyncio.sleep(20)
 
         # 4. Trả tin kết quả theo đúng ván thật của bàn C01:
         # Nếu trùng kèo -> 🎉 Húp +10%, Nếu hòa -> 🤝 Hòa +0%, Nếu ngược -> ❌ Thua -10%
@@ -355,14 +357,14 @@ class TelegramForwardBot:
             result_text = "❌ Thua -10%"
 
         await send_text(result_text, f"Đã gửi tin KẾT QUẢ (Ván bàn {self.session_table} ra {winner})")
-        await asyncio.sleep(10)
+        await asyncio.sleep(20)
 
         # 5. Gửi tin/ảnh thứ 5 (index 4 từ @frezeit) chốt ca
         ending_order = self.config.get('ending_order', [4])
-        ending_delays = self.config.get('ending_delays', [5])
+        ending_delays = self.config.get('ending_delays', [20])
         for step_num, idx in enumerate(ending_order):
             await forward_idx(idx, f"Tin kết thúc (tin thứ {idx + 1}, index {idx})")
-            delay = ending_delays[step_num] if step_num < len(ending_delays) else 5
+            delay = ending_delays[step_num] if step_num < len(ending_delays) else 20
             await asyncio.sleep(delay)
 
         self.log(f"HOÀN THÀNH CA CHO NHÓM ({self.group_id}) THEO BÀN {self.session_table} THÀNH CÔNG!\n")

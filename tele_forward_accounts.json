@@ -12,9 +12,9 @@
       "session_table": "C01",
       "source_username": "frezeit",
       "opening_order": [0, 1, 2, 3],
-      "opening_delays": [5, 5, 5, 5],
+      "opening_delays": [20, 20, 20, 20],
       "ending_order": [4],
-      "ending_delays": [5]
+      "ending_delays": [20]
     }
   ]
 }
