@@ -8,6 +8,8 @@
       "api_hash": "64436fe83185c956bece789a6f3253b8",
       "twofa": "RUBY2E",
       "group_id": "-1002680363714",
+      "name_service": "NS1",
+      "session_table": "C01",
       "source_username": "frezeit",
       "opening_order": [0, 1, 2, 3],
       "opening_delays": [5, 5, 5, 5],

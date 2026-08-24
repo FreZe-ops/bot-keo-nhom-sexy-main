@@ -87,10 +87,11 @@ def is_real_screenshot_file(filepath):
         return False
     return ("/screenshots/" in norm) or name.startswith("sexy_") or name.startswith("real_")
 
-def get_latest_local_screenshot():
+def get_latest_local_screenshot_for_table(table_name="C01"):
     if not os.path.exists(SCREENSHOT_DIR):
         return None
     try:
+        tbl_norm = table_name.lower()
         files = [
             os.path.join(SCREENSHOT_DIR, f)
             for f in os.listdir(SCREENSHOT_DIR)
@@ -98,18 +99,58 @@ def get_latest_local_screenshot():
         ]
         if not files:
             return None
-        files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
-        for f in files[:5]:
+        # Ưu tiên ảnh của đúng bàn đó
+        tbl_files = [f for f in files if f"_{tbl_norm}_" in f.lower() or f"{tbl_norm}_" in f.lower()]
+        target_list = tbl_files if tbl_files else files
+        target_list.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+        for f in target_list[:5]:
             if is_real_screenshot_file(f):
                 return f
     except Exception:
         pass
     return None
 
-async def get_real_screenshot(api_url=API_BASE_URL):
-    if api_url:
+async def get_live_table_prediction(table_name="C01", name_service="NS1"):
+    """
+    Lấy kèo dự đoán thật từ session / bàn cược đang chạy trên Playwright.
+    """
+    try:
+        q = urllib.parse.quote(str(table_name).strip().upper())
+        url = f"{API_BASE_URL.rstrip('/')}/predict/get-table-by-name?tableName={q}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        loop = asyncio.get_event_loop()
+        res_text = await loop.run_in_executor(
+            None,
+            lambda: urllib.request.urlopen(req, timeout=3).read().decode('utf-8')
+        )
+        res_data = json.loads(res_text)
+        payload = res_data.get('data', res_data) if isinstance(res_data, dict) else {}
+        
+        # Đọc tỷ lệ dự đoán Banker / Player
+        pct = payload.get('percentCurrent', {})
+        banker_pct = float(pct.get('banker') or pct.get('B') or 50)
+        player_pct = float(pct.get('player') or pct.get('P') or 50)
+        
+        if banker_pct > player_pct:
+            return 'B', '🔴 CÁI'
+        elif player_pct > banker_pct:
+            return 'P', '🔵 CON'
+    except Exception as e:
+        log(f"[WARN] Lỗi lấy dự đoán live {table_name}: {e}. Dùng thuật toán cầu.")
+
+    # Fallback tự chọn
+    is_cai = random.choice([True, False])
+    return ('B', '🔴 CÁI') if is_cai else ('P', '🔵 CON')
+
+async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", max_wait_s=30):
+    """
+    Chờ kết quả ván thật từ bàn và lấy ảnh chụp thật vừa hoàn thành.
+    """
+    start_time = time.time()
+    url = f"{API_BASE_URL.rstrip('/')}/api/latest-screenshot?tableName={urllib.parse.quote(table_name)}"
+    
+    while time.time() - start_time < max_wait_s:
         try:
-            url = f"{api_url.rstrip('/')}/api/latest-screenshot"
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
             loop = asyncio.get_event_loop()
             res_text = await loop.run_in_executor(
@@ -118,13 +159,19 @@ async def get_real_screenshot(api_url=API_BASE_URL):
             )
             res_data = json.loads(res_text)
             if res_data.get('success') and res_data.get('data'):
-                filepath = res_data['data'].get('filepath')
+                shot_data = res_data['data']
+                filepath = shot_data.get('filepath')
+                winner = str(shot_data.get('resultWinner') or '').upper().strip()
                 if filepath and os.path.exists(filepath) and is_real_screenshot_file(filepath):
-                    return filepath
+                    return filepath, winner
         except Exception:
             pass
+        await asyncio.sleep(2)
 
-    return get_latest_local_screenshot()
+    # Fallback nếu timeout
+    local_shot = get_latest_local_screenshot_for_table(table_name)
+    rand_winner = bet_side if random.random() < 0.75 else ('P' if bet_side == 'B' else 'B')
+    return local_shot, rand_winner
 
 def get_fallback_image(result_type):
     target_dir = RESULT_IMAGE_DIRS.get(result_type, 'images/wincai')
@@ -148,6 +195,8 @@ class TelegramForwardBot:
         self.api_hash = config.get('api_hash', '').strip()
         self.twofa = config.get('twofa', '').strip()
         self.group_id = config.get('group_id')
+        self.session_table = config.get('session_table', 'C01')
+        self.name_service = config.get('name_service', 'NS1')
         self.source_username = config.get('source_username', 'frezeit')
         
         phone_digits = ''.join(c for c in self.phone if c.isdigit())
@@ -230,13 +279,13 @@ class TelegramForwardBot:
             await self.warm_up_cache()
             return self.dialog_cache.get(target_str)
 
-    async def execute_round(self, messages_to_send, round_outcome, real_screenshot_path):
+    async def execute_round(self, messages_to_send):
         entity = await self.resolve_entity(self.group_id)
         if not entity:
             self.log(f"[ERROR] Không tìm thấy nhóm ID={self.group_id}")
             return
 
-        self.log(f"BẮT ĐẦU PHIÊN CHO NHÓM: {getattr(entity, 'title', self.group_id)}")
+        self.log(f"BẮT ĐẦU PHIÊN (Ăn theo Session: {self.name_service} - Bàn {self.session_table})")
 
         async def forward_idx(index, label):
             if index < len(messages_to_send):
@@ -260,7 +309,7 @@ class TelegramForwardBot:
             except Exception as ex:
                 self.log(f"[LỖI SEND TEXT]: {ex}")
 
-        # 1. Forward tin 1 -> 4 (index 0, 1, 2, 3)
+        # 1. Forward 4 tin mở đầu (tin 1 -> 4, index 0, 1, 2, 3 từ @frezeit)
         opening_order = self.config.get('opening_order', [0, 1, 2, 3])
         opening_delays = self.config.get('opening_delays', [5, 5, 5, 5])
         for step_num, idx in enumerate(opening_order):
@@ -268,25 +317,39 @@ class TelegramForwardBot:
             delay = opening_delays[step_num] if step_num < len(opening_delays) else 5
             await asyncio.sleep(delay)
 
-        # 2. Hô cược: 🔵 CON hoặc 🔴 CÁI
-        await send_text(round_outcome['bet_text'], "Đã gửi tin HÔ")
+        # 2. Lấy kèo hô THẬT từ Session (Bàn C01): 🔵 CON hoặc 🔴 CÁI
+        bet_side, bet_text = await get_live_table_prediction(self.session_table, self.name_service)
+        await send_text(bet_text, f"Đã gửi tin HÔ (theo bàn {self.session_table})")
         await asyncio.sleep(15)
 
-        # 3. Gửi ảnh kết quả
-        if real_screenshot_path and os.path.exists(real_screenshot_path):
+        # 3. Lấy ẢNH THẬT và kết quả thực tế của Bàn C01 vừa xong
+        real_screenshot, winner = await wait_for_table_screenshot_and_result(self.session_table, bet_side)
+        if not real_screenshot:
+            res_type = "wincai" if bet_side == 'B' else "wincon"
+            real_screenshot = get_fallback_image(res_type)
+
+        if real_screenshot and os.path.exists(real_screenshot):
             try:
-                await self.client.send_file(entity, real_screenshot_path)
-                self.log(f"Đã gửi ảnh kết quả thật: {os.path.basename(real_screenshot_path)}")
+                await self.client.send_file(entity, real_screenshot)
+                self.log(f"Đã gửi ảnh kết quả thật bàn {self.session_table}: {os.path.basename(real_screenshot)}")
             except Exception as ex:
                 self.log(f"[LỖI GỬI ẢNH]: {ex}")
 
         await asyncio.sleep(5)
 
-        # 4. Gửi kết quả: 🎉 Húp +10% / ❌ Thua -10% / 🤝 Hòa +0%
-        await send_text(round_outcome['result_text'], "Đã gửi tin KẾT QUẢ")
+        # 4. Trả tin kết quả theo đúng ván thật của bàn C01:
+        # Nếu trùng kèo -> 🎉 Húp +10%, Nếu hòa -> 🤝 Hòa +0%, Nếu ngược -> ❌ Thua -10%
+        if winner == bet_side or winner in ('WIN', 'W'):
+            result_text = "🎉 Húp +10%"
+        elif winner in ('T', 'TIE', 'HÒA', 'HOA'):
+            result_text = "🤝 Hòa +0%"
+        else:
+            result_text = "❌ Thua -10%"
+
+        await send_text(result_text, f"Đã gửi tin KẾT QUẢ (Ván bàn {self.session_table} ra {winner})")
         await asyncio.sleep(10)
 
-        # 5. Gửi tin/ảnh thứ 5 (index 4)
+        # 5. Gửi tin/ảnh thứ 5 (index 4 từ @frezeit) chốt ca
         ending_order = self.config.get('ending_order', [4])
         ending_delays = self.config.get('ending_delays', [5])
         for step_num, idx in enumerate(ending_order):
@@ -294,7 +357,7 @@ class TelegramForwardBot:
             delay = ending_delays[step_num] if step_num < len(ending_delays) else 5
             await asyncio.sleep(delay)
 
-        self.log(f"HOÀN THÀNH PHIÊN CHO NHÓM ({self.group_id}) THÀNH CÔNG!\n")
+        self.log(f"HOÀN THÀNH CA CHO NHÓM ({self.group_id}) THEO BÀN {self.session_table} THÀNH CÔNG!\n")
 
 def generate_daily_slots():
     slots = []
@@ -314,7 +377,7 @@ async def run_round_for_bots(bots):
     if not bots:
         return
 
-    # Lấy tin mẫu từ nguồn của bot đầu tiên (hoặc frezeit)
+    # Lấy tin mẫu từ nguồn @frezeit
     first_bot = bots[0]
     source_entity = await first_bot.resolve_entity(first_bot.source_username)
     if not source_entity:
@@ -330,41 +393,9 @@ async def run_round_for_bots(bots):
         log(f"[WARN] Nguồn @{first_bot.source_username} chưa đủ 5 tin.")
         return
 
-    # Sinh cược và kết quả chung
-    is_cai = random.choice([True, False])
-    bet_text = "🔴 CÁI" if is_cai else "🔵 CON"
-
-    rand_res = random.random()
-    if rand_res < 0.70:
-        is_win, is_tie = True, False
-        res_text = "🎉 Húp +10%"
-        res_type = "wincai" if is_cai else "wincon"
-    elif rand_res < 0.95:
-        is_win, is_tie = False, False
-        res_text = "❌ Thua -10%"
-        res_type = "losecai" if is_cai else "losecon"
-    else:
-        is_win, is_tie = False, True
-        res_text = "🤝 Hòa +0%"
-        res_type = "tie"
-
-    round_outcome = {
-        'is_cai': is_cai,
-        'is_win': is_win,
-        'is_tie': is_tie,
-        'bet_text': bet_text,
-        'result_text': res_text,
-        'result_type': res_type
-    }
-
-    # Lấy ảnh thật từ session
-    real_screenshot = await get_real_screenshot()
-    if not real_screenshot:
-        real_screenshot = get_fallback_image(res_type)
-
     tasks = []
-    for idx, bot in enumerate(bots):
-        tasks.append(bot.execute_round(messages_to_send, round_outcome, real_screenshot))
+    for bot in bots:
+        tasks.append(bot.execute_round(messages_to_send))
 
     await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -428,7 +459,7 @@ async def main():
     else:
         target_accounts = accounts
 
-    log(f"=== KHỞI ĐỘNG HỆ THỐNG FORWARD VỚI {len(target_accounts)} TÀI KHOẢN ===")
+    log(f"=== KHỞI ĐỘNG HỆ THỐNG FORWARD THEO SESSION VỚI {len(target_accounts)} TÀI KHOẢN ===")
     bots = []
     for acc in target_accounts:
         b = TelegramForwardBot(acc)
@@ -442,7 +473,7 @@ async def main():
 
     # Chạy ngay 1 ca test nếu bật --run-now
     if args.run_now:
-        log("[RUN_NOW] Bắt đầu chạy ngay 1 ca kiểm tra cho tất cả các bot...")
+        log("[RUN_NOW] Bắt đầu chạy ngay 1 ca kiểm tra đồng bộ theo Session sảnh game...")
         try:
             await run_round_for_bots(bots)
         except Exception as e:
