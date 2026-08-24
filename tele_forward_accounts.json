@@ -11,10 +11,34 @@
       "name_service": "NS1",
       "session_table": "C01",
       "source_username": "frezeit",
+      "interval_minutes": 10,
+      "start_time": "10:00",
+      "end_time": "23:00",
+      "bet_amount_label": "10%",
       "opening_order": [0, 1, 2, 3],
       "opening_delays": [20, 20, 20, 20],
       "ending_order": [4],
       "ending_delays": [20]
+    },
+    {
+      "id": "bot_forward_2",
+      "name": "Bot Forward 2 (5000)",
+      "phone": "+84878377698",
+      "api_id": 30590012,
+      "api_hash": "66d4b8c135ab325038bda084a5453fe7",
+      "twofa": "",
+      "group_id": "",
+      "name_service": "NS2",
+      "session_table": "C02",
+      "source_username": "frezeit",
+      "interval_minutes": 15,
+      "start_time": "10:00",
+      "end_time": "22:45",
+      "bet_amount_label": "5000",
+      "opening_order": [0, 1, 2],
+      "opening_delays": [20, 20, 20],
+      "ending_order": [3, 4],
+      "ending_delays": [20, 20]
     }
   ]
 }

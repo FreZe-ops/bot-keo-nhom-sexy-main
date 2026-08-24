@@ -163,9 +163,9 @@ async def get_healthy_active_sessions():
         log(f"[WARN] Lỗi kiểm tra session health: {e}")
     return healthy
 
-async def select_next_healthy_session(previous_table=None):
+async def select_next_healthy_session(previous_table=None, exclude_tables=None, bot_name=""):
     """
-    Chọn 1 bàn cào mượt mà nhất, tự động đổi sang bàn khác với ca trước.
+    Chọn 1 bàn cào mượt mà nhất, tự động đổi sang bàn khác với ca trước và tránh trùng bàn với bot khác.
     """
     healthy = await get_healthy_active_sessions()
     
@@ -176,13 +176,23 @@ async def select_next_healthy_session(previous_table=None):
     # Sắp xếp theo độ tươi mới của ảnh
     healthy.sort(key=lambda x: x['age_s'])
 
-    # Lọc các bàn khác với bàn ở ca trước (để đổi bàn liên tục mỗi 10 phút)
-    candidates = [h for h in healthy if h['table'] != str(previous_table).upper().strip()]
+    exclude_set = set()
+    if previous_table:
+        exclude_set.add(str(previous_table).upper().strip())
+    if exclude_tables:
+        for t in exclude_tables:
+            if t:
+                exclude_set.add(str(t).upper().strip())
+
+    candidates = [h for h in healthy if h['table'] not in exclude_set]
     if not candidates:
-        candidates = healthy  # Nếu chỉ có 1 bàn duy nhất thì vẫn dùng bàn đó
+        other_bot_excludes = set(str(t).upper().strip() for t in exclude_tables if t) if exclude_tables else set()
+        candidates = [h for h in healthy if h['table'] not in other_bot_excludes]
+        if not candidates:
+            candidates = healthy
 
     chosen = random.choice(candidates)
-    log(f"[DYNAMIC ROTATION] Đã chọn Session {chosen['name_service']} - Bàn {chosen['table']} (Ảnh mới cách {chosen['age_s']:.1f}s, khác ca trước: '{previous_table}')")
+    log(f"[{bot_name or 'DYNAMIC ROTATION'}] Đã chọn Session {chosen['name_service']} - Bàn {chosen['table']} (Ảnh mới cách {chosen['age_s']:.1f}s, loại trừ: {list(exclude_set)})")
     return chosen['name_service'], chosen['table']
 
 async def get_live_table_prediction(table_name="C01", name_service="NS1"):
@@ -311,7 +321,9 @@ class TelegramForwardBot:
         self.session_table = config.get('session_table', 'C01')
         self.name_service = config.get('name_service', 'NS1')
         self.source_username = config.get('source_username', 'frezeit')
+        self.bet_amount_label = str(config.get('bet_amount_label', '10%')).strip()
         self.last_used_table = None
+        self.is_running_round = False
         
         phone_digits = ''.join(c for c in self.phone if c.isdigit())
         self.session_name = f'user_session_{phone_digits}' if phone_digits else f'user_session_{self.bot_id}'
@@ -381,6 +393,8 @@ class TelegramForwardBot:
                 self.dialog_cache[uname.lower().lstrip('@')] = d.entity
 
     async def resolve_entity(self, target):
+        if not target:
+            return None
         target_str = str(target).strip().lower().lstrip('@')
         if target_str in self.dialog_cache:
             return self.dialog_cache[target_str]
@@ -393,162 +407,183 @@ class TelegramForwardBot:
             await self.warm_up_cache()
             return self.dialog_cache.get(target_str)
 
-    async def execute_round(self, messages_to_send):
+    async def execute_round(self, messages_to_send, exclude_tables=None):
+        if not self.group_id:
+            self.log("[ERROR] Chưa cấu hình group_id cho tài khoản này.")
+            return
+
         entity = await self.resolve_entity(self.group_id)
         if not entity:
             self.log(f"[ERROR] Không tìm thấy nhóm ID={self.group_id}")
             return
 
-        # 0. TỰ ĐỘNG CHỌN BÀN KHỎE MẠNH VÀ XOAY TUA BÀN KHÁC MỖI CA 10P
-        selected_ns, selected_table = await select_next_healthy_session(self.last_used_table)
-        self.name_service = selected_ns
-        self.session_table = selected_table
-        self.last_used_table = selected_table
+        self.is_running_round = True
+        try:
+            # 0. TỰ ĐỘNG CHỌN BÀN KHỎE MẠNH VÀ KHÔNG TRÙNG VỚI BOT KHÁC
+            selected_ns, selected_table = await select_next_healthy_session(
+                previous_table=self.last_used_table,
+                exclude_tables=exclude_tables,
+                bot_name=self.name
+            )
+            self.name_service = selected_ns
+            self.session_table = selected_table
+            self.last_used_table = selected_table
 
-        self.log(f"BẮT ĐẦU PHIÊN (Đồng bộ Session: {self.name_service} - Bàn {self.session_table})")
+            self.log(f"BẮT ĐẦU PHIÊN (Đồng bộ Session: {self.name_service} - Bàn {self.session_table} | Mức cược: {self.bet_amount_label})")
 
-        async def forward_idx(index, label):
-            if index < len(messages_to_send):
+            async def forward_idx(index, label):
+                if index < len(messages_to_send):
+                    try:
+                        await self.client.forward_messages(entity, messages_to_send[index], silent=True, drop_author=True)
+                        self.log(f"{label} (msg_id={messages_to_send[index].id}, index={index})")
+                    except FloodWaitError as fe:
+                        self.log(f"[FLOOD WAIT] Chờ {fe.seconds}s...")
+                        await asyncio.sleep(fe.seconds + 1)
+                        await self.client.forward_messages(entity, messages_to_send[index], silent=True, drop_author=True)
+                    except Exception as ex:
+                        self.log(f"[LỖI FORWARD index {index}]: {ex}")
+
+            async def send_text(txt, label):
                 try:
-                    await self.client.forward_messages(entity, messages_to_send[index], silent=True, drop_author=True)
-                    self.log(f"{label} (msg_id={messages_to_send[index].id}, index={index})")
+                    await self.client.send_message(entity, txt)
+                    self.log(f"{label}: {txt}")
                 except FloodWaitError as fe:
-                    self.log(f"[FLOOD WAIT] Chờ {fe.seconds}s...")
                     await asyncio.sleep(fe.seconds + 1)
-                    await self.client.forward_messages(entity, messages_to_send[index], silent=True, drop_author=True)
+                    await self.client.send_message(entity, txt)
                 except Exception as ex:
-                    self.log(f"[LỖI FORWARD index {index}]: {ex}")
+                    self.log(f"[LỖI SEND TEXT]: {ex}")
 
-        async def send_text(txt, label):
-            try:
-                await self.client.send_message(entity, txt)
-                self.log(f"{label}: {txt}")
-            except FloodWaitError as fe:
-                await asyncio.sleep(fe.seconds + 1)
-                await self.client.send_message(entity, txt)
-            except Exception as ex:
-                self.log(f"[LỖI SEND TEXT]: {ex}")
+            # 1. Forward các tin mở đầu (index theo config, cách nhau 20s)
+            opening_order = self.config.get('opening_order', [0, 1, 2, 3])
+            opening_delays = self.config.get('opening_delays', [20, 20, 20, 20])
+            for step_num, idx in enumerate(opening_order):
+                await forward_idx(idx, f"Tin mở đầu {step_num + 1}/{len(opening_order)}")
+                delay = opening_delays[step_num] if step_num < len(opening_delays) else 20
+                await asyncio.sleep(delay)
 
-        # 1. Forward 4 tin mở đầu (tin 1 -> 4, index 0, 1, 2, 3 từ @frezeit, cách nhau 20s)
-        opening_order = self.config.get('opening_order', [0, 1, 2, 3])
-        opening_delays = self.config.get('opening_delays', [20, 20, 20, 20])
-        for step_num, idx in enumerate(opening_order):
-            await forward_idx(idx, f"Tin mở đầu {step_num + 1}/{len(opening_order)}")
-            delay = opening_delays[step_num] if step_num < len(opening_delays) else 20
-            await asyncio.sleep(delay)
+            # 2. Chờ 20s trước, sau đó mới lấy tin hô Con / Cái trực tiếp từ bàn đó
+            self.log(f"Chờ 20s trước khi lấy lệnh hô trực tiếp từ bàn {self.session_table} ({self.name_service})...")
+            await asyncio.sleep(20)
 
-        # 2. Chờ 20s trước, sau đó mới lấy tin hô Con / Cái trực tiếp từ bàn đó
-        self.log(f"Chờ 20s trước khi lấy lệnh hô trực tiếp từ bàn {self.session_table} ({self.name_service})...")
-        await asyncio.sleep(20)
+            bet_side, bet_text = await get_live_table_prediction(self.session_table, self.name_service)
+            bet_time_ms = int(time.time() * 1000)  # Ghi nhận mốc thời gian hô lệnh
 
-        bet_side, bet_text = await get_live_table_prediction(self.session_table, self.name_service)
-        bet_time_ms = int(time.time() * 1000)  # Ghi nhận mốc thời gian hô lệnh
-        await send_text(bet_text, f"Đã gửi tin HÔ (lấy trực tiếp theo bàn {self.session_table})")
+            # Nếu cấu hình là 5000 thay vì 10%
+            if self.bet_amount_label == "5000":
+                bet_text_to_send = f"{bet_text} 5000"
+            else:
+                bet_text_to_send = bet_text
 
-        # 3. Chờ ván đang cược hoàn thành: Lấy ẢNH THẬT và kết quả thực tế của ĐÚNG ván đó (stamp >= bet_time_ms)
-        real_screenshot, raw_winner = await wait_for_table_screenshot_and_result(
-            self.session_table, bet_side, min_stamp_ms=bet_time_ms, max_wait_s=45
-        )
-        if not real_screenshot:
-            res_type = "wincai" if bet_side == 'B' else "wincon"
-            real_screenshot = get_fallback_image(res_type)
+            await send_text(bet_text_to_send, f"Đã gửi tin HÔ (lấy trực tiếp theo bàn {self.session_table})")
 
-        if real_screenshot and os.path.exists(real_screenshot):
-            try:
-                await self.client.send_file(entity, real_screenshot)
-                self.log(f"Đã gửi ảnh kết quả thật bàn {self.session_table}: {os.path.basename(real_screenshot)}")
-            except Exception as ex:
-                self.log(f"[LỖI GỬI ẢNH]: {ex}")
+            # 3. Chờ ván đang cược hoàn thành: Lấy ẢNH THẬT và kết quả thực tế của ĐÚNG ván đó (stamp >= bet_time_ms)
+            real_screenshot, raw_winner = await wait_for_table_screenshot_and_result(
+                self.session_table, bet_side, min_stamp_ms=bet_time_ms, max_wait_s=45
+            )
+            if not real_screenshot:
+                res_type = "wincai" if bet_side == 'B' else "wincon"
+                real_screenshot = get_fallback_image(res_type)
 
-        await asyncio.sleep(20)
+            if real_screenshot and os.path.exists(real_screenshot):
+                try:
+                    await self.client.send_file(entity, real_screenshot)
+                    self.log(f"Đã gửi ảnh kết quả thật bàn {self.session_table}: {os.path.basename(real_screenshot)}")
+                except Exception as ex:
+                    self.log(f"[LỖI GỬI ẢNH]: {ex}")
 
-        # 4. Trả tin kết quả chuẩn xác 100% theo ván thực tế:
-        # Chuẩn hóa winner: 'B' (Cái), 'P' (Con), 'T' (Hòa)
-        norm_winner = normalize_side(raw_winner)
-        norm_bet = normalize_side(bet_side)
+            await asyncio.sleep(20)
 
-        if norm_winner == 'T':
-            result_text = "🤝 Hòa +0%"
-        elif norm_winner == norm_bet:
-            result_text = "🎉 Húp +10%"
-        else:
-            result_text = "❌ Thua -10%"
+            # 4. Trả tin kết quả chuẩn xác 100% theo ván thực tế:
+            norm_winner = normalize_side(raw_winner)
+            norm_bet = normalize_side(bet_side)
 
-        self.log(f"[XÁC ĐỊNH KẾT QUẢ] Kèo hô={bet_text} ({norm_bet}) | Bàn mở ra={norm_winner} | Trả tin: {result_text}")
-        await send_text(result_text, f"Đã gửi tin KẾT QUẢ (Ván bàn {self.session_table} ra {norm_winner})")
-        await asyncio.sleep(20)
+            if self.bet_amount_label == "5000":
+                if norm_winner == 'T':
+                    result_text = "🤝 Hòa +0"
+                elif norm_winner == norm_bet:
+                    result_text = "🎉 Húp +5000"
+                else:
+                    result_text = "❌ Thua -5000"
+            else:
+                if norm_winner == 'T':
+                    result_text = "🤝 Hòa +0%"
+                elif norm_winner == norm_bet:
+                    result_text = "🎉 Húp +10%"
+                else:
+                    result_text = "❌ Thua -10%"
 
-        # 5. Gửi tin/ảnh thứ 5 (index 4 từ @frezeit) chốt ca
-        ending_order = self.config.get('ending_order', [4])
-        ending_delays = self.config.get('ending_delays', [20])
-        for step_num, idx in enumerate(ending_order):
-            await forward_idx(idx, f"Tin kết thúc (tin thứ {idx + 1}, index {idx})")
-            delay = ending_delays[step_num] if step_num < len(ending_delays) else 20
-            await asyncio.sleep(delay)
+            self.log(f"[XÁC ĐỊNH KẾT QUẢ] Kèo hô={bet_text_to_send} ({norm_bet}) | Bàn mở ra={norm_winner} | Trả tin: {result_text}")
+            await send_text(result_text, f"Đã gửi tin KẾT QUẢ (Ván bàn {self.session_table} ra {norm_winner})")
+            await asyncio.sleep(20)
 
-        self.log(f"HOÀN THÀNH CA CHO NHÓM ({self.group_id}) THEO BÀN {self.session_table} THÀNH CÔNG!\n")
+            # 5. Gửi tin/ảnh kết thúc chốt ca
+            ending_order = self.config.get('ending_order', [4])
+            ending_delays = self.config.get('ending_delays', [20])
+            for step_num, idx in enumerate(ending_order):
+                await forward_idx(idx, f"Tin kết thúc (tin thứ {idx + 1}, index {idx})")
+                delay = ending_delays[step_num] if step_num < len(ending_delays) else 20
+                await asyncio.sleep(delay)
 
-def generate_daily_slots():
+            self.log(f"HOÀN THÀNH CA CHO NHÓM ({self.group_id}) THEO BÀN {self.session_table} THÀNH CÔNG!\n")
+        finally:
+            self.is_running_round = False
+
+def generate_slots_for_config(interval=10, start_str="10:00", end_str="23:00"):
     slots = []
-    start_minutes = SCHEDULE_START_HOUR * 60 + SCHEDULE_START_MINUTE
-    end_minutes = SCHEDULE_END_HOUR * 60 + SCHEDULE_END_MINUTE
+    sh, sm = map(int, start_str.split(':'))
+    eh, em = map(int, end_str.split(':'))
+    start_minutes = sh * 60 + sm
+    end_minutes = eh * 60 + em
     minutes = start_minutes
     while minutes <= end_minutes:
         hour, minute = divmod(minutes, 60)
         slots.append(f"{hour:02d}:{minute:02d}")
-        minutes += SCHEDULE_INTERVAL
+        minutes += interval
     return slots
 
-TIME_SLOTS = generate_daily_slots()
-TIME_SLOTS_SET = set(TIME_SLOTS)
-
-async def run_round_for_bots(bots):
-    if not bots:
-        return
-
-    # Lấy tin mẫu từ nguồn @frezeit
-    first_bot = bots[0]
-    source_entity = await first_bot.resolve_entity(first_bot.source_username)
-    if not source_entity:
-        log(f"[ERROR] Không tìm thấy nguồn @{first_bot.source_username}")
-        return
-
-    messages_to_send = []
-    async for m in first_bot.client.iter_messages(source_entity, limit=20):
-        messages_to_send.append(m)
-    messages_to_send.sort(key=lambda x: x.id)
-
-    if len(messages_to_send) < 5:
-        log(f"[WARN] Nguồn @{first_bot.source_username} chưa đủ 5 tin.")
-        return
-
-    tasks = []
-    for bot in bots:
-        tasks.append(bot.execute_round(messages_to_send))
-
-    await asyncio.gather(*tasks, return_exceptions=True)
-
-async def schedule_loop(bots):
-    global sent_slots
-    log(f"Lịch chạy: Từ {TIME_SLOTS[0]} đến {TIME_SLOTS[-1]} (mỗi {SCHEDULE_INTERVAL} phút, {len(TIME_SLOTS)} ca/ngày)")
+async def run_single_bot_schedule(bot, all_bots):
+    interval = bot.config.get('interval_minutes', 10)
+    start_str = bot.config.get('start_time', '10:00')
+    end_str = bot.config.get('end_time', '23:00')
+    
+    slots = generate_slots_for_config(interval, start_str, end_str)
+    slots_set = set(slots)
+    sent_slots = set()
+    
+    bot.log(f"Lịch chạy: Từ {slots[0]} đến {slots[-1]} (mỗi {interval} phút, {len(slots)} ca/ngày)")
     
     while True:
         now = datetime.now(TZ)
-        hour = now.hour
-        minute = now.minute
-        time_str = f"{hour:02d}:{minute:02d}"
+        time_str = f"{now.hour:02d}:{now.minute:02d}"
         
-        if time_str in TIME_SLOTS_SET:
+        if time_str in slots_set:
             slot_key = now.strftime('%Y-%m-%d %H:%M')
             if slot_key not in sent_slots:
-                log(f"Bắt đầu ca {slot_key} cho {len(bots)} bot...")
-                try:
-                    await run_round_for_bots(bots)
-                except Exception as e:
-                    log(f"[LỖI TRONG CA]: {e}")
+                bot.log(f"Bắt đầu ca {slot_key}...")
                 sent_slots.add(slot_key)
+                try:
+                    source_entity = await bot.resolve_entity(bot.source_username)
+                    if not source_entity:
+                        bot.log(f"[ERROR] Không tìm thấy nguồn @{bot.source_username}")
+                    else:
+                        messages = []
+                        async for m in bot.client.iter_messages(source_entity, limit=20):
+                            messages.append(m)
+                        messages.sort(key=lambda x: x.id)
+                        
+                        if len(messages) < 5:
+                            bot.log(f"[WARN] Nguồn @{bot.source_username} chưa đủ 5 tin.")
+                        else:
+                            # Lấy danh sách các bàn mà các bot khác đang sử dụng
+                            other_tables = [
+                                b.session_table for b in all_bots 
+                                if b != bot and b.is_running_round and b.session_table
+                            ]
+                            await bot.execute_round(messages, exclude_tables=other_tables)
+                except Exception as e:
+                    bot.log(f"[LỖI TRONG CA]: {e}")
 
-        if hour == 0 and minute == 1:
+        if now.hour == 0 and now.minute == 1:
             sent_slots = set()
 
         await asyncio.sleep(60 - now.second)
@@ -556,7 +591,7 @@ async def schedule_loop(bots):
 async def main():
     parser = argparse.ArgumentParser(description="Multi-Account Telegram Forward Runner")
     parser.add_argument('--account', type=str, help="ID của tài khoản cần chạy (ví dụ bot_forward_1)")
-    parser.add_argument('--login', type=str, help="Đăng nhập OTP cho tài khoản cụ thể (ví dụ bot_forward_1)")
+    parser.add_argument('--login', type=str, help="Đăng nhập OTP cho tài khoản cụ thể (ví dụ bot_forward_1 hoặc bot_forward_2)")
     parser.add_argument('--all', action='store_true', help="Chạy toàn bộ tài khoản trong config song song")
     parser.add_argument('--run-now', action='store_true', default=True, help="Chạy ngay 1 ca test khi khởi động")
     args = parser.parse_args()
@@ -602,14 +637,25 @@ async def main():
 
     # Chạy ngay 1 ca test nếu bật --run-now
     if args.run_now:
-        log("[RUN_NOW] Bắt đầu chạy ngay 1 ca kiểm tra đồng bộ động theo Session khỏe mạnh...")
-        try:
-            await run_round_for_bots(bots)
-        except Exception as e:
-            log(f"[LỖI RUN_NOW]: {e}")
+        log("[RUN_NOW] Bắt đầu chạy ngay 1 ca kiểm tra đồng bộ động cho các bot...")
+        for b in bots:
+            if not b.group_id:
+                b.log("[WARN] Bỏ qua ca test vì chưa cấu hình group_id.")
+                continue
+            source_entity = await b.resolve_entity(b.source_username)
+            if source_entity:
+                messages = []
+                async for m in b.client.iter_messages(source_entity, limit=20):
+                    messages.append(m)
+                messages.sort(key=lambda x: x.id)
+                if len(messages) >= 5:
+                    other_tables = [other.session_table for other in bots if other != b and other.session_table]
+                    asyncio.create_task(b.execute_round(messages, exclude_tables=other_tables))
 
+    # Chạy schedule song song độc lập cho từng bot
+    tasks = [run_single_bot_schedule(b, bots) for b in bots]
     try:
-        await schedule_loop(bots)
+        await asyncio.gather(*tasks)
     finally:
         for b in bots:
             if b.client and b.client.is_connected():
