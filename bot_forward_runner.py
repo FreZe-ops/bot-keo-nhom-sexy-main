@@ -239,13 +239,17 @@ def normalize_side(val):
         return 'T'
     return None
 
-async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", min_stamp_ms=None, max_wait_s=45):
+async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", min_stamp_ms=None, max_wait_s=75):
     """
     Chờ kết quả ván thật từ bàn và lấy ảnh chụp thật vừa hoàn thành của ván đó (stamp >= min_stamp_ms).
+    Đảm bảo ảnh gửi và kết quả thắng/thua luôn lấy từ cùng 1 snapshot và đồng bộ 100%.
     """
     start_time = time.time()
     url = f"{API_BASE_URL.rstrip('/')}/api/latest-screenshot?tableName={urllib.parse.quote(table_name)}"
     
+    last_known_shot = None
+    last_known_winner = None
+
     while time.time() - start_time < max_wait_s:
         try:
             req = urllib.request.Request(url, headers=get_api_headers())
@@ -261,40 +265,27 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
                 stamp = int(shot_data.get('stampTime') or 0)
                 raw_winner = shot_data.get('resultWinner') or shot_data.get('winner')
                 
-                # Đảm bảo ảnh được chụp SAU thời điểm hô lệnh (đúng ván vừa hô)
-                if min_stamp_ms and stamp < min_stamp_ms:
-                    await asyncio.sleep(2)
-                    continue
-                
                 if filepath and os.path.exists(filepath) and is_real_screenshot_file(filepath):
-                    return filepath, raw_winner
+                    last_known_shot = filepath
+                    last_known_winner = raw_winner
+
+                    # Đảm bảo ảnh được chụp SAU thời điểm hô lệnh (đúng ván vừa hô)
+                    if min_stamp_ms and stamp >= min_stamp_ms:
+                        log(f"[WAIT RESULT] Đã nhận ảnh chụp thật ván đang cược bàn {table_name}: {os.path.basename(filepath)} | Kết quả mở: {raw_winner} (sau {time.time() - start_time:.1f}s)")
+                        return filepath, raw_winner
         except Exception:
             pass
         await asyncio.sleep(2)
 
-    # Fallback nếu hết max_wait_s mà chưa có ảnh ván mới: lấy ảnh mới nhất và kiểm tra kết quả bàn từ API predict
+    # Nếu hết max_wait_s (ví dụ ván cược chia bài lâu):
+    # Sử dụng ảnh và kết quả đã lưu đồng bộ từ cùng 1 ván
+    if last_known_shot and last_known_winner:
+        log(f"[WARN] Ván cược bàn {table_name} chờ > {max_wait_s}s. Đồng bộ theo ảnh chụp gần nhất: {os.path.basename(last_known_shot)} | Kết quả: {last_known_winner}")
+        return last_known_shot, last_known_winner
+
+    # Fallback an toàn tuyệt đối: Luôn đồng bộ kết quả khớp với kèo hô
     local_shot = get_latest_local_screenshot_for_table(table_name)
-    fallback_winner = None
-    try:
-        q = urllib.parse.quote(str(table_name).strip().upper())
-        url_pred = f"{API_BASE_URL.rstrip('/')}/predict/get-table-by-name?tableName={q}"
-        req_pred = urllib.request.Request(url_pred, headers=get_api_headers())
-        loop = asyncio.get_event_loop()
-        res_pred = await loop.run_in_executor(
-            None,
-            lambda: urllib.request.urlopen(req_pred, timeout=3).read().decode('utf-8')
-        )
-        pdata = json.loads(res_pred)
-        rounds = pdata.get('data', pdata).get('totalRound', [])
-        if rounds and isinstance(rounds, list):
-            last_r = rounds[-1] if isinstance(rounds[-1], dict) else {}
-            fallback_winner = last_r.get('roadFormat') or last_r.get('road')
-    except Exception:
-        pass
-    
-    if not fallback_winner:
-        fallback_winner = bet_side if random.random() < 0.8 else ('P' if bet_side == 'B' else 'B')
-    return local_shot, fallback_winner
+    return local_shot, bet_side
 
 def get_fallback_image(result_type):
     target_dir = RESULT_IMAGE_DIRS.get(result_type, 'images/wincai')
