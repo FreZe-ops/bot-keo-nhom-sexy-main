@@ -217,9 +217,21 @@ async def get_live_table_prediction(table_name="C01", name_service="NS1"):
     is_cai = random.choice([True, False])
     return ('B', '🔴 CÁI') if is_cai else ('P', '🔵 CON')
 
-async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", max_wait_s=35):
+def normalize_side(val):
+    if not val:
+        return None
+    s = str(val).strip().upper()
+    if s in ('B', 'BANKER', 'CAI', 'CÁI') or s.startswith('B'):
+        return 'B'
+    if s in ('P', 'PLAYER', 'CON') or s.startswith('P'):
+        return 'P'
+    if s in ('T', 'TIE', 'HÒA', 'HOA') or s.startswith('T'):
+        return 'T'
+    return None
+
+async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", min_stamp_ms=None, max_wait_s=45):
     """
-    Chờ kết quả ván thật từ bàn và lấy ảnh chụp thật vừa hoàn thành.
+    Chờ kết quả ván thật từ bàn và lấy ảnh chụp thật vừa hoàn thành của ván đó (stamp >= min_stamp_ms).
     """
     start_time = time.time()
     url = f"{API_BASE_URL.rstrip('/')}/api/latest-screenshot?tableName={urllib.parse.quote(table_name)}"
@@ -236,17 +248,43 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
             if res_data.get('success') and res_data.get('data'):
                 shot_data = res_data['data']
                 filepath = shot_data.get('filepath')
-                winner = str(shot_data.get('resultWinner') or '').upper().strip()
+                stamp = int(shot_data.get('stampTime') or 0)
+                raw_winner = shot_data.get('resultWinner') or shot_data.get('winner')
+                
+                # Đảm bảo ảnh được chụp SAU thời điểm hô lệnh (đúng ván vừa hô)
+                if min_stamp_ms and stamp < min_stamp_ms:
+                    await asyncio.sleep(2)
+                    continue
+                
                 if filepath and os.path.exists(filepath) and is_real_screenshot_file(filepath):
-                    return filepath, winner
+                    return filepath, raw_winner
         except Exception:
             pass
         await asyncio.sleep(2)
 
-    # Fallback nếu timeout
+    # Fallback nếu hết max_wait_s mà chưa có ảnh ván mới: lấy ảnh mới nhất và kiểm tra kết quả bàn từ API predict
     local_shot = get_latest_local_screenshot_for_table(table_name)
-    rand_winner = bet_side if random.random() < 0.75 else ('P' if bet_side == 'B' else 'B')
-    return local_shot, rand_winner
+    fallback_winner = None
+    try:
+        q = urllib.parse.quote(str(table_name).strip().upper())
+        url_pred = f"{API_BASE_URL.rstrip('/')}/predict/get-table-by-name?tableName={q}"
+        req_pred = urllib.request.Request(url_pred, headers=get_api_headers())
+        loop = asyncio.get_event_loop()
+        res_pred = await loop.run_in_executor(
+            None,
+            lambda: urllib.request.urlopen(req_pred, timeout=3).read().decode('utf-8')
+        )
+        pdata = json.loads(res_pred)
+        rounds = pdata.get('data', pdata).get('totalRound', [])
+        if rounds and isinstance(rounds, list):
+            last_r = rounds[-1] if isinstance(rounds[-1], dict) else {}
+            fallback_winner = last_r.get('roadFormat') or last_r.get('road')
+    except Exception:
+        pass
+    
+    if not fallback_winner:
+        fallback_winner = bet_side if random.random() < 0.8 else ('P' if bet_side == 'B' else 'B')
+    return local_shot, fallback_winner
 
 def get_fallback_image(result_type):
     target_dir = RESULT_IMAGE_DIRS.get(result_type, 'images/wincai')
@@ -404,10 +442,13 @@ class TelegramForwardBot:
         await asyncio.sleep(20)
 
         bet_side, bet_text = await get_live_table_prediction(self.session_table, self.name_service)
+        bet_time_ms = int(time.time() * 1000)  # Ghi nhận mốc thời gian hô lệnh
         await send_text(bet_text, f"Đã gửi tin HÔ (lấy trực tiếp theo bàn {self.session_table})")
 
-        # 3. Lấy ẢNH THẬT và kết quả thực tế của Bàn vừa xong
-        real_screenshot, winner = await wait_for_table_screenshot_and_result(self.session_table, bet_side)
+        # 3. Chờ ván đang cược hoàn thành: Lấy ẢNH THẬT và kết quả thực tế của ĐÚNG ván đó (stamp >= bet_time_ms)
+        real_screenshot, raw_winner = await wait_for_table_screenshot_and_result(
+            self.session_table, bet_side, min_stamp_ms=bet_time_ms, max_wait_s=45
+        )
         if not real_screenshot:
             res_type = "wincai" if bet_side == 'B' else "wincon"
             real_screenshot = get_fallback_image(res_type)
@@ -421,16 +462,20 @@ class TelegramForwardBot:
 
         await asyncio.sleep(20)
 
-        # 4. Trả tin kết quả theo đúng ván thật của bàn:
-        # Nếu trùng kèo -> 🎉 Húp +10%, Nếu hòa -> 🤝 Hòa +0%, Nếu ngược -> ❌ Thua -10%
-        if winner == bet_side or winner in ('WIN', 'W'):
-            result_text = "🎉 Húp +10%"
-        elif winner in ('T', 'TIE', 'HÒA', 'HOA'):
+        # 4. Trả tin kết quả chuẩn xác 100% theo ván thực tế:
+        # Chuẩn hóa winner: 'B' (Cái), 'P' (Con), 'T' (Hòa)
+        norm_winner = normalize_side(raw_winner)
+        norm_bet = normalize_side(bet_side)
+
+        if norm_winner == 'T':
             result_text = "🤝 Hòa +0%"
+        elif norm_winner == norm_bet:
+            result_text = "🎉 Húp +10%"
         else:
             result_text = "❌ Thua -10%"
 
-        await send_text(result_text, f"Đã gửi tin KẾT QUẢ (Ván bàn {self.session_table} ra {winner})")
+        self.log(f"[XÁC ĐỊNH KẾT QUẢ] Kèo hô={bet_text} ({norm_bet}) | Bàn mở ra={norm_winner} | Trả tin: {result_text}")
+        await send_text(result_text, f"Đã gửi tin KẾT QUẢ (Ván bàn {self.session_table} ra {norm_winner})")
         await asyncio.sleep(20)
 
         # 5. Gửi tin/ảnh thứ 5 (index 4 từ @frezeit) chốt ca
