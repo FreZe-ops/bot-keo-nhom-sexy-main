@@ -53,17 +53,24 @@ def check_and_heal():
                         age_s = time.time() - (stamp / 1000)
                         if age_s > 300: # Lâu quá 5 phút (300s) không có ảnh mới
                             log(f"❌ {ns} (Bàn {table}): Ảnh chụp đã cũ ({age_s:.1f}s > 300s) -> Cần restart")
-                            restart_session(idx)
-                        else:
-                            pass
+def check_bot_services():
+    services = ['BCR-bot1', 'BCR-bot2', 'BCR-bot3', 'BCR-bot4', 'BCR-forward-bot', 'BCR-server']
+    for s in services:
+        try:
+            res = subprocess.run(f'"{NSSM}" status {s}', capture_output=True, text=True, shell=True, timeout=10)
+            status = res.stdout.strip()
+            if 'STOPPED' in status or 'PAUSED' in status:
+                log(f"🚨 PHÁT HIỆN DỊCH VỤ {s} ĐANG BỊ DỪNG ({status}) -> TỰ ĐỘNG KHỞI ĐỘNG LẠI NGAY!")
+                subprocess.run(f'"{NSSM}" start {s}', capture_output=True, text=True, shell=True, timeout=15)
         except Exception as e:
-            log(f"⚠️ {ns}: Không kết nối được API ({e})")
+            log(f"⚠️ Lỗi check status {s}: {e}")
 
 def main_loop():
-    log("Khởi động Watchdog giám sát tự động 5 phút cho tất cả Session...")
+    log("Khởi động Watchdog giám sát tự động 5 phút cho tất cả Session & Bot...")
     while True:
         try:
             check_and_heal()
+            check_bot_services()
         except Exception as e:
             log(f"Lỗi vòng lặp giám sát: {e}")
         time.sleep(60)
