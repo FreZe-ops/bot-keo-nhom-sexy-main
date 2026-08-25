@@ -554,7 +554,7 @@ class TelegramForwardBot:
             # Gửi ảnh chụp bàn hiện tại KÈM CAPTION báo bàn cược
             if self.config.get('send_table_preview'):
                 preview_shot = get_latest_local_screenshot_for_table(self.session_table)
-                caption_template = self.config.get('send_table_preview_caption', '🎲 BÀN CƯỢC: BACCARAT {table} | VÀO LỆNH NGAY NÀO AE 💸')
+                caption_template = self.config.get('send_table_preview_caption', '🎲 BÀN CƯỢC: BACCARAT {table} | CHUẨN BỊ VÀO LỆNH NÀO AE 💸')
                 preview_caption = str(caption_template).replace('{table}', self.session_table)
                 if preview_shot and os.path.exists(preview_shot):
                     try:
