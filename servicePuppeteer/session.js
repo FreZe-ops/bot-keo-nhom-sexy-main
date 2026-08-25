@@ -1634,6 +1634,7 @@ async function clickSignalLostReload() {
     page,
     ...(page && typeof page.frames === "function" ? page.frames() : []),
   ].filter(Boolean);
+
   const seen = new Set();
   for (const f of frames) {
     if (!f || (typeof f.isClosed === "function" && f.isClosed())) continue;
@@ -1648,26 +1649,22 @@ async function clickSignalLostReload() {
               .normalize("NFD")
               .replace(/[\u0300-\u036f]/g, "");
 
-          const isVisible = (el) => {
-            try {
-              const st = window.getComputedStyle(el);
-              const r = el.getBoundingClientRect();
-              return (
-                st.display !== "none" &&
-                st.visibility !== "hidden" &&
-                Number(st.opacity) !== 0 &&
-                r.width > 0 &&
-                r.height > 0
-              );
-            } catch (_) {
-              return false;
+          const fireFullClick = (el) => {
+            const evs = ["pointerdown", "mousedown", "pointerup", "mouseup", "click"];
+            for (const name of evs) {
+              try {
+                el.dispatchEvent(
+                  new MouseEvent(name, { bubbles: true, cancelable: true, view: window })
+                );
+              } catch (_) {}
             }
+            if (typeof el.click === "function") el.click();
           };
 
-          // 1. Tìm nút [Reload] / [Làm mới] ở thanh công cụ góc phải dưới (như trong ảnh Sexy Baccarat)
+          // 1. Quét tìm nút [Reload] / [Làm mới] ở thanh công cụ góc phải dưới
           const allButtons = Array.from(
             document.querySelectorAll(
-              "button, a, div, span, [role='button'], .btn-reload, .btn_reload, [class*='reload'], [class*='refresh']"
+              "button, a, div, span, [role='button'], .btn-reload, .btn_reload, [class*='reload'], [class*='refresh'], svg"
             )
           );
           for (const b of allButtons) {
@@ -1678,20 +1675,12 @@ async function clickSignalLostReload() {
               txt === 'reload' ||
               txt === 'lam moi' ||
               txt.includes('reload') ||
-              txt.includes('lam moi') ||
               cls.includes('btn_reload') ||
               cls.includes('btn-reload') ||
               cls.includes('btn_refresh')
             ) {
-              if (isVisible(b) && typeof b.click === 'function') {
-                b.click();
-                return {
-                  ok: true,
-                  via: "toolbar_reload_button",
-                  text: rawTxt,
-                  cls: b.className || "",
-                };
-              }
+              fireFullClick(b);
+              return { ok: true, via: "toolbar_reload_button", text: rawTxt, cls: b.className || "" };
             }
           }
 
@@ -1704,33 +1693,8 @@ async function clickSignalLostReload() {
               txt.includes("vui long lam moi") ||
               txt.includes("signal lost")
             ) {
-              const parent = el.closest("div, section, aside") || el;
-              const btns = Array.from(
-                parent.querySelectorAll(
-                  "button, a, [role='button'], .btn_refresh, [class*='refresh'], [class*='reload'], svg"
-                )
-              );
-              for (const b of btns) {
-                if (isVisible(b) && typeof b.click === "function") {
-                  b.click();
-                  return {
-                    ok: true,
-                    via: "signal_overlay_btn",
-                    text: b.innerText || "button",
-                    cls: b.className || "",
-                  };
-                }
-              }
-              // Click trực tiếp vào text / overlay
-              if (isVisible(el) && typeof el.click === "function") {
-                el.click();
-                return {
-                  ok: true,
-                  via: "signal_overlay_direct_click",
-                  text: el.innerText || "overlay",
-                  cls: el.className || "",
-                };
-              }
+              fireFullClick(el);
+              return { ok: true, via: "signal_overlay_direct_click", text: el.innerText || "overlay" };
             }
           }
 
@@ -1742,13 +1706,13 @@ async function clickSignalLostReload() {
     );
     if (clicked?.ok) {
       console.log(
-        `[SIGNAL CLICK] Đã click làm mới DOM thành công qua ${clicked.via} (text='${clicked.text || "-"}', class='${clicked.cls || "-"}')`
+        `[SIGNAL CLICK] Đã click làm mới DOM thành công qua ${clicked.via} (text='${clicked.text || "-"}')`
       );
       return true;
     }
   }
 
-  // 3. Fallback Playwright click vào button text Reload / Làm mới hoặc click tâm video
+  // 3. Fallback Playwright click vào locator text Reload
   for (const f of frames) {
     try {
       const reloadLoc = f.locator("text=/^Reload$|Làm mới|Vui lòng làm mới/i");
@@ -1760,12 +1724,15 @@ async function clickSignalLostReload() {
     } catch (_) {}
   }
 
-  // 4. Click tâm vùng video (tọa độ màn hình video Sexy)
+  // 4. Click chính xác vào vị trí nút [🔄 Reload] trên thanh công cụ và tâm video
   if (page && !page.isClosed()) {
     try {
-      const vp = page.viewportSize() || { width: 1280, height: 720 };
-      await page.mouse.click(vp.width * 0.5, vp.height * 0.35);
-      console.log("[SIGNAL CLICK] Đã click chuột vào tâm vùng video overlay!");
+      const vp = page.viewportSize() || { width: 1440, height: 900 };
+      // Tọa độ nút Reload trên toolbar góc dưới phải của Sexy Baccarat (x~89%, y~70.5%)
+      await page.mouse.click(vp.width * 0.89, vp.height * 0.705);
+      // Tọa độ dòng chữ Tín hiệu bị mất ở giữa màn hình (x~50%, y~52%)
+      await page.mouse.click(vp.width * 0.50, vp.height * 0.52);
+      console.log("[SIGNAL CLICK] Đã click chuột Playwright vào tọa độ nút Reload và tâm video!");
       return true;
     } catch (_) {}
   }
@@ -3371,8 +3338,15 @@ async function captureTableRound(tableName, roundOptions = {}) {
     const seamlessElement = await page.$("iframe#seamless-game").catch(() => null);
     const targetToScreenshot = seamlessElement || page;
 
+    // 1. Kiểm tra trước khi chụp: Nếu đang bị mất tín hiệu video -> Bấm Reload ngay và chờ 1.5s
+    if (await detectSignalLost().catch(() => false)) {
+      console.log(`🔄 [PRE-CAPTURE] Bàn ${cleanTarget} mất tín hiệu video — Tự động bấm Reload...`);
+      await clickSignalLostReload();
+      await helper.delay(1500);
+    }
+
     const captureDeadline = Symbol("capture-timeout");
-    const result = await Promise.race([
+    let result = await Promise.race([
       screenshotHelper.saveScreenshot(targetToScreenshot, cleanTarget, {
         roundNum: roundOptions.roundNum,
         resultWinner: roundOptions.resultWinner,
@@ -3394,11 +3368,29 @@ async function captureTableRound(tableName, roundOptions = {}) {
       return { success: false, reason: "CAPTURE_TIMEOUT" };
     }
 
-    // Xử lý khi ảnh bị mất tín hiệu video (màn hình đen)
+    // 2. Xử lý khi ảnh bị mất tín hiệu video (màn hình đen) -> Tự động bấm Reload và chụp lại ngay!
     if (result?.fatalUi === "SIGNAL_LOST" || await detectSignalLost().catch(() => false)) {
-      console.warn(`[SCREENSHOT REJECT] Bàn ${cleanTarget} bị mất tín hiệu video — Tự động bấm Reload...`);
-      await handleInTableSignalLost().catch(() => {});
-      return { success: false, reason: "SIGNAL_LOST" };
+      console.warn(`[SCREENSHOT RECOVER] Bàn ${cleanTarget} vừa phát hiện màn hình đen — Đang click Reload và chụp lại ảnh nét...`);
+      await clickSignalLostReload();
+      await helper.delay(1800);
+
+      // Thử chụp lại ảnh đẹp của bàn cược sau khi reload
+      const retryResult = await screenshotHelper.saveScreenshot(targetToScreenshot, cleanTarget, {
+        roundNum: roundOptions.roundNum,
+        resultWinner: roundOptions.resultWinner,
+        shoeNum: roundOptions.shoeNum,
+        isFullPage: false,
+        pageObj: page,
+        trimBlack: false,
+      }).catch(() => null);
+
+      if (retryResult && retryResult.success) {
+        result = retryResult;
+        console.log(`✅ [SCREENSHOT RECOVER SUCCESS] Đã chụp lại thành công ảnh bàn ${cleanTarget} sau khi Reload!`);
+      } else {
+        await handleInTableSignalLost().catch(() => {});
+        return { success: false, reason: "SIGNAL_LOST" };
+      }
     }
 
     // Text kick có thể nằm hoàn toàn trên canvas, không thể thấy qua innerText.
