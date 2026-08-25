@@ -2491,9 +2491,9 @@ async function probeBetDom(zoneSel) {
   return null;
 }
 
-/** Chọn chip 1 lần (vd 50 → #Chips_50). Không bắt buộc visible — tray có thể ngoài viewport. */
+/** Chọn chip 1 lần (vd 50, 5000, 5K → #Chips_5k hoặc click chip đang hiển thị). */
 async function selectBetChip(amountK) {
-  const amt = Math.max(1, Math.round(Number(amountK) || 50));
+  const amtNum = Number(amountK) || 50;
   const frames = getInTableBetFrames();
   let lastProbe = null;
 
@@ -2501,63 +2501,71 @@ async function selectBetChip(amountK) {
     if (!frame || (typeof frame.isClosed === "function" && frame.isClosed())) continue;
     const ok = await withTimeout(
       frame
-        .evaluate((amount) => {
-          const chipIds = Array.from(document.querySelectorAll("[id*='Chip'], [id*='chip']")).map(
-            (el) => el.id
+        .evaluate((amt) => {
+          const norm = (s) => String(s || "").replace(/\s+/g, "").toUpperCase();
+          const chipEls = Array.from(
+            document.querySelectorAll("[id*='Chip'], [id*='chip'], .chip, [class*='chip'], li[class*='chip']")
           );
-          const ids = [
-            `Chips_${amount}`,
-            `Chips_${amount}k`,
-            `Chips_${amount}K`,
-            `chip_${amount}`,
-            `chip_${amount}k`,
-          ];
-          for (const id of ids) {
-            const el = document.getElementById(id);
-            if (!el) continue;
+          if (chipEls.length === 0) return { ok: false, chipIds: [] };
+
+          const chipIds = chipEls.map((el) => el.id || el.className || el.innerText);
+
+          // 1. Kiểm tra xem đã có chip nào đang được chọn sẵn chưa
+          for (const el of chipEls) {
             const cls = typeof el.className === "string" ? el.className : "";
             if (/\bselect\b|\bactive\b|\bselected\b/i.test(cls)) {
-              return { ok: true, via: "already_selected", id, chipIds };
+              return { ok: true, via: "already_active", id: el.id || el.innerText, chipIds };
             }
-            el.click();
-            return { ok: true, via: "id", id, chipIds };
           }
-          const lis = Array.from(
-            document.querySelectorAll("li[id*='Chip'], li[id*='chip'], .chip, [class*='chip']")
-          );
-          const wantExact = new Set(
-            [`${amount}K`, `${amount}k`, String(amount)].map((s) =>
-              s.replace(/\s+/g, "").toUpperCase()
-            )
-          );
-          for (const el of lis) {
-            const t = (el.innerText || el.textContent || "").replace(/\s+/g, "").toUpperCase();
-            if (!wantExact.has(t)) continue;
-            const cls = typeof el.className === "string" ? el.className : "";
-            if (/\bselect\b|\bactive\b|\bselected\b/i.test(cls)) {
-              return { ok: true, via: "text_selected", id: el.id || t, chipIds };
+
+          // 2. Tìm theo các biến thể số tiền (5000 -> 5K, 50 -> 50K, 500 -> 500)
+          const targetKeys = new Set();
+          targetKeys.add(String(amt));
+          targetKeys.add(`${amt}K`);
+          if (amt >= 1000) {
+            targetKeys.add(`${Math.round(amt / 1000)}K`);
+            targetKeys.add(String(Math.round(amt / 1000)));
+          }
+
+          for (const el of chipEls) {
+            const txt = norm(el.innerText || el.textContent || "");
+            const id = norm(el.id || "");
+            for (const k of targetKeys) {
+              const kNorm = norm(k);
+              if (txt === kNorm || id.includes(kNorm)) {
+                el.click();
+                return { ok: true, via: "match_value", id: el.id || txt, chipIds };
+              }
             }
-            el.click();
-            return { ok: true, via: "text", id: el.id || t, chipIds };
           }
+
+          // 3. Fallback: Click chip đầu tiên khả dụng trong khay chip
+          for (const el of chipEls) {
+            const rect = el.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              el.click();
+              return { ok: true, via: "fallback_first_visible", id: el.id || el.innerText, chipIds };
+            }
+          }
+
           return { ok: false, chipIds };
-        }, amt)
+        }, amtNum)
         .catch(() => ({ ok: false })),
       2500,
       { ok: false }
     );
     if (ok && ok.chipIds) lastProbe = ok.chipIds;
     if (ok && ok.ok) {
-      console.log(`✅ [CHIP] Đã chọn chip ${amt} via=${ok.via} id=${ok.id || "?"}`);
+      console.log(`✅ [CHIP] Đã chọn chip via=${ok.via} id=${ok.id || "?"}`);
       await helper.appendToLog(
-        `✅ [CHIP] Chọn chip ${amt} (${ok.via}/${ok.id || "?"})`,
+        `✅ [CHIP] Chọn chip (${ok.via}/${ok.id || "?"})`,
         logsNameProgress
       );
       return true;
     }
   }
   console.log(
-    `⚠️ [CHIP] Không tìm thấy chip ${amt} | probeIds=${JSON.stringify(lastProbe || [])}`
+    `⚠️ [CHIP] Không tìm thấy chip ${amtNum} | probeIds=${JSON.stringify(lastProbe || [])}`
   );
   return false;
 }

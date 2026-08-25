@@ -338,6 +338,36 @@ def get_fallback_image(result_type):
             return random.choice(files)
     return None
 
+def request_place_bet_api(table_name, bet_side, name_service=None, bet_amount=None):
+    try:
+        url = f"{API_BASE_URL.rstrip('/')}/api/place-bet"
+        body = {
+            "tableName": table_name,
+            "betSide": bet_side,
+            "side": bet_side,
+        }
+        if name_service:
+            body["nameService"] = name_service
+        if bet_amount:
+            try:
+                body["betAmount"] = float(bet_amount)
+            except (ValueError, TypeError):
+                pass
+        data_bytes = json.dumps(body).encode('utf-8')
+        req = urllib.request.Request(
+            url,
+            data=data_bytes,
+            headers={**get_api_headers(), 'Content-Type': 'application/json'},
+            method='POST'
+        )
+        with urllib.request.urlopen(req, timeout=4) as res:
+            res_json = json.loads(res.read().decode('utf-8'))
+            log(f"🎰 [AUTO BET API] Đã gửi lệnh đặt cược tự động bàn {table_name} ({bet_side}) -> {res_json}")
+            return res_json
+    except Exception as ex:
+        log(f"⚠️ [AUTO BET API ERROR] Không thể gửi lệnh đặt cược: {ex}")
+        return None
+
 class TelegramForwardBot:
     def __init__(self, config):
         self.config = config
@@ -505,6 +535,13 @@ class TelegramForwardBot:
                 bet_text_to_send = bet_text
 
             await send_text(bet_text_to_send, f"Đã gửi tin HÔ (lấy trực tiếp theo bàn {self.session_table})")
+
+            # ĐẶT CƯỢC TỰ ĐỘNG TRÊN TRANG GAME: Gửi lệnh đặt cược đồng bộ theo đúng bàn và cửa vừa hô
+            try:
+                bet_amt = 5000 if self.bet_amount_label == "5000" else None
+                request_place_bet_api(self.session_table, bet_side, self.name_service, bet_amt)
+            except Exception as e:
+                self.log(f"[AUTO BET ERROR]: {e}")
 
             # 3. CHỜ CỐ ĐỊNH ÍT NHẤT 20S để dealer chia bài và lật bài xong (không bao giờ lấy kết quả vội)
             self.log(f"Đã hô lệnh ({bet_text_to_send}). Chờ cố định 20s cho ván bài bàn {self.session_table} chia và lật bài xong...")
