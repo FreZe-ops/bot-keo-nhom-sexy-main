@@ -401,7 +401,12 @@ class TelegramForwardBot:
         self.bet_amount_label = str(config.get('bet_amount_label', '10%')).strip()
         self.last_used_table = None
         self.is_running_round = False
-        self.preferred_sessions = ['NS1', 'NS3'] if self.bot_id == 'bot_forward_1' else ['NS2', 'NS4']
+        if self.bot_id == 'bot_forward_1':
+            self.preferred_sessions = ['NS1']
+        elif self.bot_id == 'bot_forward_2':
+            self.preferred_sessions = ['NS2']
+        else:
+            self.preferred_sessions = ['NS3', 'NS4']
         
         phone_digits = ''.join(c for c in self.phone if c.isdigit())
         self.session_name = f'user_session_{phone_digits}' if phone_digits else f'user_session_{self.bot_id}'
@@ -540,6 +545,19 @@ class TelegramForwardBot:
                 delay = opening_delays[step_num] if step_num < len(opening_delays) else 20
                 await asyncio.sleep(delay)
 
+            # Gửi ảnh chụp bàn hiện tại + Báo bàn text đẹp (nếu cấu hình bật)
+            if self.config.get('send_table_preview'):
+                preview_shot = get_latest_local_screenshot_for_table(self.session_table)
+                if preview_shot and os.path.exists(preview_shot):
+                    try:
+                        self.log(f"Đang gửi ảnh bàn cược hiện tại: {os.path.basename(preview_shot)}...")
+                        await self.client.send_file(entity, preview_shot)
+                    except Exception as ex:
+                        self.log(f"[LỖI GỬI ẢNH BÀN]: {ex}")
+                table_announce_text = f"🎲 BÀN CƯỢC: BACCARAT {self.session_table} | VÀO LỆNH NGAY NÀO AE 💸"
+                await send_text(table_announce_text, f"Đã báo bàn cược {self.session_table}")
+                await asyncio.sleep(20)
+
             # 2. Chờ 20s trước, sau đó mới lấy tin hô Con / Cái trực tiếp từ bàn đó
             self.log(f"Chờ 20s trước khi lấy lệnh hô trực tiếp từ bàn {self.session_table} ({self.name_service})...")
             await asyncio.sleep(20)
@@ -547,9 +565,11 @@ class TelegramForwardBot:
             bet_side, bet_text, initial_round_count = await get_live_table_prediction(self.session_table, self.name_service)
             bet_time_ms = int(time.time() * 1000)  # Ghi nhận mốc thời gian hô lệnh
 
-            # Nếu cấu hình là 5000 thay vì 10%
+            # Định dạng lệnh hô
             if self.bet_amount_label == "5000":
                 bet_text_to_send = f"{bet_text} 5000"
+            elif self.bet_amount_label == "1000":
+                bet_text_to_send = f"{bet_text} 1000"
             else:
                 bet_text_to_send = bet_text
 
@@ -557,7 +577,7 @@ class TelegramForwardBot:
 
             # ĐẶT CƯỢC TỰ ĐỘNG TRÊN TRANG GAME: Gửi lệnh đặt cược đồng bộ theo đúng bàn và cửa vừa hô
             try:
-                bet_amt = 5000 if self.bet_amount_label == "5000" else None
+                bet_amt = 5000 if self.bet_amount_label == "5000" else (1000 if self.bet_amount_label == "1000" else None)
                 request_place_bet_api(self.session_table, bet_side, self.name_service, bet_amt)
             except Exception as e:
                 self.log(f"[AUTO BET ERROR]: {e}")
@@ -612,6 +632,13 @@ class TelegramForwardBot:
                     result_text = "🎉 Húp +5000"
                 else:
                     result_text = "❌ Thua -5000"
+            elif self.bet_amount_label == "1000":
+                if norm_winner == 'T':
+                    result_text = "🤝 Hòa +0"
+                elif norm_winner == norm_bet:
+                    result_text = "🎉 Húp +1000"
+                else:
+                    result_text = "❌ Thua -1000"
             else:
                 if norm_winner == 'T':
                     result_text = "🤝 Hòa +0%"
