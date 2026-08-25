@@ -1564,14 +1564,16 @@ async function detectConnectionRefreshing() {
   return false;
 }
 
-/** Overlay: "Tín hiệu bị mất ... Vui lòng làm mới." — reload, không restart session */
+/** Overlay: "Tín hiệu bị mất ... Vui lòng làm mới." — reload từ DOM ngay lập tức */
 async function detectSignalLost() {
   const frames = [
-    page && page.frame({ name: "iframeGameTable" }),
-    page && page.frame({ name: "iframeGame" }),
     gameCurrentFrame,
     seamlessFrame,
+    page && page.frame({ name: "iframeGameTable" }),
+    page && page.frame({ name: "iframeGame" }),
+    page && page.frame({ name: "iframeGameHall" }),
     page,
+    ...(page && typeof page.frames === "function" ? page.frames() : []),
   ].filter(Boolean);
   const seen = new Set();
   for (const f of frames) {
@@ -1589,7 +1591,10 @@ async function detectSignalLost() {
           const needles = [
             "tin hieu bi mat",
             "tín hiệu bị mất",
+            "vui long lam moi",
+            "vui lòng làm mới",
             "signal lost",
+            "please reload",
           ].map(norm);
           const scan = (raw) => {
             const t = norm(raw);
@@ -1598,7 +1603,7 @@ async function detectSignalLost() {
           };
           if (scan(document.body?.innerText || "")) return true;
           const nodes = document.querySelectorAll(
-            "div, span, p, section, aside, button, label"
+            "div, span, p, section, aside, button, label, [class*='error'], [class*='signal'], [class*='mask']"
           );
           for (const el of nodes) {
             const txt = (el.innerText || el.textContent || "").trim();
@@ -1628,11 +1633,13 @@ async function detectSignalLost() {
 
 async function clickSignalLostReload() {
   const frames = [
-    page && page.frame({ name: "iframeGameTable" }),
-    page && page.frame({ name: "iframeGame" }),
     gameCurrentFrame,
     seamlessFrame,
+    page && page.frame({ name: "iframeGameTable" }),
+    page && page.frame({ name: "iframeGame" }),
+    page && page.frame({ name: "iframeGameHall" }),
     page,
+    ...(page && typeof page.frames === "function" ? page.frames() : []),
   ].filter(Boolean);
   const seen = new Set();
   for (const f of frames) {
@@ -1665,57 +1672,60 @@ async function clickSignalLostReload() {
                 st.display !== "none" &&
                 st.visibility !== "hidden" &&
                 Number(st.opacity) !== 0 &&
-                r.width > 1 &&
-                r.height > 1
+                r.width > 0 &&
+                r.height > 0
               );
             } catch (_) {
               return false;
             }
           };
-          const lostMarker = Array.from(
-            document.querySelectorAll("div, span, p, section, aside")
-          ).find((el) => {
-            const t = norm(el.innerText || el.textContent || "");
-            return t.length < 140 && t.includes("tin hieu bi mat") && isVisible(el);
-          });
-          if (lostMarker) {
-            let box = lostMarker;
-            for (let depth = 0; box && depth < 6; depth++, box = box.parentElement) {
-              const candidates = Array.from(
-                box.querySelectorAll(
-                  "button, a, [role='button'], .btn_refresh, [class*='refresh']"
+
+          // 1. Tìm phần tử chứa chữ "Tín hiệu bị mất" hoặc "Vui lòng làm mới" và click button / click chính nó
+          const allEls = Array.from(document.querySelectorAll("*"));
+          for (const el of allEls) {
+            const txt = norm(el.innerText || el.textContent || "");
+            if (
+              txt.includes("tin hieu bi mat") ||
+              txt.includes("vui long lam moi") ||
+              txt.includes("signal lost")
+            ) {
+              const parent = el.closest("div, section, aside") || el;
+              const btns = Array.from(
+                parent.querySelectorAll(
+                  "button, a, [role='button'], .btn_refresh, [class*='refresh'], [class*='reload'], svg"
                 )
               );
-              const exact = candidates.find((el) => {
-                const txt = (
-                  el.innerText ||
-                  el.textContent ||
-                  el.getAttribute("title") ||
-                  ""
-                ).trim();
-                return isVisible(el) && isReloadText(txt);
-              });
-              if (exact && typeof exact.click === "function") {
-                exact.click();
+              for (const b of btns) {
+                if (isVisible(b) && typeof b.click === "function") {
+                  b.click();
+                  return {
+                    ok: true,
+                    via: "signal_overlay_btn",
+                    text: b.innerText || "button",
+                    cls: b.className || "",
+                  };
+                }
+              }
+              // Click trực tiếp vào text/overlay (Sexy Baccarat cho phép click bất kỳ điểm nào trên overlay để reload)
+              if (isVisible(el) && typeof el.click === "function") {
+                el.click();
                 return {
                   ok: true,
-                  via: "signal_overlay",
-                  text: (exact.innerText || exact.textContent || "").trim(),
-                  cls: String(exact.className || "").slice(0, 100),
+                  via: "signal_overlay_direct_click",
+                  text: el.innerText || "overlay",
+                  cls: el.className || "",
                 };
               }
             }
           }
 
-          // Chỉ click control refresh thực sự. Quét mọi div/span theo text có thể
-          // click nhầm wrapper "Đang làm mới đường truyền / Loading..." và làm
-          // luồng video kẹt vĩnh viễn.
-          const nodes = Array.from(
+          // 2. Tìm tất cả các nút refresh / reload trên DOM
+          const reloadNodes = Array.from(
             document.querySelectorAll(
-              "button, a, [role='button'], .btn_refresh, [class*='refresh']"
+              "button, a, [role='button'], .btn_refresh, [class*='refresh'], [class*='reload']"
             )
           );
-          for (const el of nodes) {
+          for (const el of reloadNodes) {
             const txt = (
               el.innerText ||
               el.textContent ||
@@ -1724,22 +1734,16 @@ async function clickSignalLostReload() {
             ).trim();
             if (
               !isReloadText(txt) &&
-              !/btn_refresh|refresh/i.test(el.className || "")
+              !/btn_refresh|refresh|reload/i.test(el.className || "")
             ) {
               continue;
             }
             if (!isVisible(el)) continue;
-            const tag = String(el.tagName || "").toLowerCase();
-            const isInteractive =
-              tag === "button" ||
-              tag === "a" ||
-              el.getAttribute("role") === "button" ||
-              /btn_refresh|refresh/i.test(el.className || "");
-            if (isInteractive && typeof el.click === "function") {
+            if (typeof el.click === "function") {
               el.click();
               return {
                 ok: true,
-                via: "global_fallback",
+                via: "global_reload_btn",
                 text: txt,
                 cls: String(el.className || "").slice(0, 100),
               };
@@ -1753,52 +1757,64 @@ async function clickSignalLostReload() {
     );
     if (clicked?.ok) {
       console.log(
-        `[SIGNAL] reload target via=${clicked.via} text=${clicked.text || "-"} ` +
-          `class=${clicked.cls || "-"}`
+        `[SIGNAL CLICK] Đã click làm mới DOM thành công qua ${clicked.via} (text='${clicked.text || "-"}', class='${clicked.cls || "-"}')`
       );
       return true;
     }
   }
+
+  // Fallback Playwright locator
+  for (const f of frames) {
+    try {
+      const loc = f.locator("text=/Tín hiệu bị mất|Vui lòng làm mới|Làm mới|btn_refresh|refresh/i");
+      if ((await loc.count()) > 0) {
+        await loc.first().click({ timeout: 1500, force: true });
+        console.log("[SIGNAL CLICK] Đã click bằng Playwright locator!");
+        return true;
+      }
+    } catch (_) {}
+  }
+
   return clickBtnRefresh();
 }
 
 async function handleInTableSignalLost() {
   const lost = await detectSignalLost().catch(() => false);
   if (!lost) {
-    signalReloadAttempts = 0;
+    if (signalReloadAttempts > 0) {
+      console.log("✅ [SIGNAL] Tín hiệu video đã phục hồi bình thường sau khi bấm làm mới!");
+      signalReloadAttempts = 0;
+    }
     return false;
   }
-  if (Date.now() - lastSignalReloadAt < 15000) {
-    console.log("[SIGNAL] đang mất tín hiệu — đã bấm làm mới, chờ");
+
+  // Cho phép click lại sau mỗi 4 giây nếu màn hình vẫn còn báo mất tín hiệu
+  if (Date.now() - lastSignalReloadAt < 4000) {
     return true;
   }
-  if (signalReloadAttempts > 0 && Date.now() - lastResultEventAt < 90000) {
-    console.log("[SIGNAL] B/P/T vẫn cập nhật — không click reload thêm");
-    return true;
-  }
+
   lastSignalReloadAt = Date.now();
   signalReloadAttempts += 1;
-  console.log("[SIGNAL] Tín hiệu bị mất — bấm làm mới, KHÔNG restart session");
+
+  console.log(
+    `[SIGNAL] Phát hiện 'Tín hiệu bị mất ... Vui lòng làm mới' (lần ${signalReloadAttempts}/4) — Đang click nút Làm Mới từ DOM...`
+  );
   await helper.appendToLog(
-    "🔄 [SIGNAL] Tín hiệu bị mất — click làm mới (không resetMain)",
+    `🔄 [SIGNAL] Tín hiệu bị mất — click làm mới lần ${signalReloadAttempts}`,
     logsNameProgress
   );
+
   const ok = await clickSignalLostReload().catch(() => false);
   console.log(
-    ok ? "✅ [SIGNAL] đã click làm mới" : "⚠️ [SIGNAL] không thấy nút làm mới"
+    ok ? "✅ [SIGNAL] Đã click làm mới DOM thành công!" : "⚠️ [SIGNAL] Đang tìm và click lại nút làm mới..."
   );
-  if (signalReloadAttempts >= 3 && !signalReentering) {
-    if (Date.now() - lastResultEventAt < 90000) {
-      console.log(
-        "[SIGNAL] overlay còn nhưng B/P/T vẫn chạy — giữ bàn, không phá luồng capture"
-      );
-      signalReloadAttempts = 0;
-      return true;
-    }
+
+  // Nếu đã click 4 lần (16s) mà stream vẫn không hồi phục: Tự động thoát ra sảnh và vào lại bàn cược
+  if (signalReloadAttempts >= 4 && !signalReentering) {
     signalReentering = true;
     signalReloadAttempts = 0;
     console.warn(
-      "[SIGNAL] reload 3 lần chưa hết — về sảnh/vào lại bàn, KHÔNG full login"
+      "[SIGNAL] Đã click làm mới 4 lần chưa hết — tự động về sảnh vào lại bàn để kết nối lại video..."
     );
     setTimeout(async () => {
       try {
@@ -1811,7 +1827,6 @@ async function handleInTableSignalLost() {
         }
       } catch (error) {
         console.error("[SIGNAL RE-ENTER]", error.message);
-        // Re-enter cùng browser thất bại mới dùng watchdog/resetMain.
         lastSessionProgressAt = 0;
       } finally {
         signalReentering = false;

@@ -197,8 +197,9 @@ async def select_next_healthy_session(previous_table=None, exclude_tables=None, 
 
 async def get_live_table_prediction(table_name="C01", name_service="NS1"):
     """
-    Lấy kèo dự đoán thật từ session / bàn cược đang chạy trên Playwright.
+    Lấy kèo dự đoán thật và số lượng round hiện tại từ session / bàn cược đang chạy trên Playwright.
     """
+    round_count = 0
     try:
         q = urllib.parse.quote(str(table_name).strip().upper())
         url = f"{API_BASE_URL.rstrip('/')}/predict/get-table-by-name?tableName={q}"
@@ -211,21 +212,25 @@ async def get_live_table_prediction(table_name="C01", name_service="NS1"):
         res_data = json.loads(res_text)
         payload = res_data.get('data', res_data) if isinstance(res_data, dict) else {}
         
+        rounds = payload.get('totalRound', [])
+        if isinstance(rounds, list):
+            round_count = len(rounds)
+        
         # Đọc tỷ lệ dự đoán Banker / Player
         pct = payload.get('percentCurrent', {})
         banker_pct = float(pct.get('banker') or pct.get('B') or 50)
         player_pct = float(pct.get('player') or pct.get('P') or 50)
         
         if banker_pct > player_pct:
-            return 'B', '🔴 CÁI'
+            return 'B', '🔴 CÁI', round_count
         elif player_pct > banker_pct:
-            return 'P', '🔵 CON'
+            return 'P', '🔵 CON', round_count
     except Exception as e:
         log(f"[WARN] Lỗi lấy dự đoán live {table_name}: {e}. Dùng thuật toán cầu.")
 
     # Fallback tự chọn
     is_cai = random.choice([True, False])
-    return ('B', '🔴 CÁI') if is_cai else ('P', '🔵 CON')
+    return ('B', '🔴 CÁI', round_count) if is_cai else ('P', '🔵 CON', round_count)
 
 def normalize_side(val):
     if not val:
@@ -239,16 +244,20 @@ def normalize_side(val):
         return 'T'
     return None
 
-async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", min_stamp_ms=None, max_wait_s=75):
+async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", min_stamp_ms=None, initial_round_count=0, max_wait_s=75):
     """
-    Chờ kết quả ván thật từ bàn và lấy ảnh chụp thật vừa hoàn thành của ván đó (stamp >= min_stamp_ms).
-    Đảm bảo ảnh gửi và kết quả thắng/thua luôn lấy từ cùng 1 snapshot và đồng bộ 100%.
+    Chờ kết quả ván thật từ bàn và lấy ảnh chụp thật vừa hoàn thành của ván đó.
+    QUY TẮC:
+    - 1 ván baccarat từ lúc đặt cược đến khi lật bài xong mất tối thiểu 25-50 giây.
+    - KHÔNG BAO GIỜ chấp nhận ảnh chụp trong vòng 18 giây đầu sau khi hô (vì đó là ảnh của ván trước).
+    - Chỉ chấp nhận ảnh có stampTime >= min_stamp_ms + 18000 HOẶC roundNum > initial_round_count.
     """
     start_time = time.time()
     url = f"{API_BASE_URL.rstrip('/')}/api/latest-screenshot?tableName={urllib.parse.quote(table_name)}"
     
     last_known_shot = None
     last_known_winner = None
+    min_valid_stamp = (min_stamp_ms + 18000) if min_stamp_ms else int(time.time() * 1000)
 
     while time.time() - start_time < max_wait_s:
         try:
@@ -264,26 +273,27 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
                 filepath = shot_data.get('filepath')
                 stamp = int(shot_data.get('stampTime') or 0)
                 raw_winner = shot_data.get('resultWinner') or shot_data.get('winner')
+                shot_round = int(shot_data.get('roundNum') or 0)
                 
                 if filepath and os.path.exists(filepath) and is_real_screenshot_file(filepath):
                     last_known_shot = filepath
                     last_known_winner = raw_winner
 
-                    # Đảm bảo ảnh được chụp SAU thời điểm hô lệnh (đúng ván vừa hô)
-                    if min_stamp_ms and stamp >= min_stamp_ms:
-                        log(f"[WAIT RESULT] Đã nhận ảnh chụp thật ván đang cược bàn {table_name}: {os.path.basename(filepath)} | Kết quả mở: {raw_winner} (sau {time.time() - start_time:.1f}s)")
+                    # Đảm bảo đây là ván cược mới thật sự (sau ít nhất 18s hoặc số round tăng)
+                    is_new_round = (stamp >= min_valid_stamp) or (initial_round_count > 0 and shot_round > initial_round_count)
+                    if is_new_round:
+                        log(f"[WAIT RESULT] Đã nhận ảnh chụp thật ván vừa cược bàn {table_name}: {os.path.basename(filepath)} | Kết quả mở: {raw_winner} (sau {time.time() - start_time:.1f}s)")
                         return filepath, raw_winner
         except Exception:
             pass
         await asyncio.sleep(2)
 
-    # Nếu hết max_wait_s (ví dụ ván cược chia bài lâu):
-    # Sử dụng ảnh và kết quả đã lưu đồng bộ từ cùng 1 ván
+    # Nếu hết max_wait_s:
     if last_known_shot and last_known_winner:
         log(f"[WARN] Ván cược bàn {table_name} chờ > {max_wait_s}s. Đồng bộ theo ảnh chụp gần nhất: {os.path.basename(last_known_shot)} | Kết quả: {last_known_winner}")
         return last_known_shot, last_known_winner
 
-    # Fallback an toàn tuyệt đối: Luôn đồng bộ kết quả khớp với kèo hô
+    # Fallback an toàn
     local_shot = get_latest_local_screenshot_for_table(table_name)
     return local_shot, bet_side
 
@@ -456,7 +466,7 @@ class TelegramForwardBot:
             self.log(f"Chờ 20s trước khi lấy lệnh hô trực tiếp từ bàn {self.session_table} ({self.name_service})...")
             await asyncio.sleep(20)
 
-            bet_side, bet_text = await get_live_table_prediction(self.session_table, self.name_service)
+            bet_side, bet_text, initial_round_count = await get_live_table_prediction(self.session_table, self.name_service)
             bet_time_ms = int(time.time() * 1000)  # Ghi nhận mốc thời gian hô lệnh
 
             # Nếu cấu hình là 5000 thay vì 10%
@@ -467,9 +477,10 @@ class TelegramForwardBot:
 
             await send_text(bet_text_to_send, f"Đã gửi tin HÔ (lấy trực tiếp theo bàn {self.session_table})")
 
-            # 3. Chờ ván đang cược hoàn thành: Lấy ẢNH THẬT và kết quả thực tế của ĐÚNG ván đó (stamp >= bet_time_ms)
+            # 3. Chờ ván đang cược hoàn thành thật sự trên bàn: Lấy ẢNH THẬT và kết quả thực tế của ĐÚNG ván đó (chờ ít nhất 20-50s)
+            self.log(f"Đang chờ ván cược bàn {self.session_table} kết thúc để lấy ảnh kết quả thật...")
             real_screenshot, raw_winner = await wait_for_table_screenshot_and_result(
-                self.session_table, bet_side, min_stamp_ms=bet_time_ms, max_wait_s=45
+                self.session_table, bet_side, min_stamp_ms=bet_time_ms, initial_round_count=initial_round_count, max_wait_s=75
             )
             if not real_screenshot:
                 res_type = "wincai" if bet_side == 'B' else "wincon"
