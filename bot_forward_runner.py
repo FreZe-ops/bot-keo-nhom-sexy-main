@@ -506,10 +506,14 @@ class TelegramForwardBot:
 
             await send_text(bet_text_to_send, f"Đã gửi tin HÔ (lấy trực tiếp theo bàn {self.session_table})")
 
-            # 3. Chờ ván đang cược hoàn thành thật sự trên bàn: Lấy ẢNH THẬT và kết quả thực tế của ĐÚNG ván đó (chờ ít nhất 20-50s)
-            self.log(f"Đang chờ ván cược bàn {self.session_table} kết thúc để lấy ảnh kết quả thật...")
+            # 3. CHỜ CỐ ĐỊNH ÍT NHẤT 20S để dealer chia bài và lật bài xong (không bao giờ lấy kết quả vội)
+            self.log(f"Đã hô lệnh ({bet_text_to_send}). Chờ cố định 20s cho ván bài bàn {self.session_table} chia và lật bài xong...")
+            await asyncio.sleep(20)
+
+            # 4. Sau 20s: Lấy ẢNH THẬT và kết quả thực tế của ĐÚNG ván vừa cược xong
+            self.log(f"Đang lấy ảnh kết quả thật vừa mở thưởng bàn {self.session_table}...")
             real_screenshot, raw_winner = await wait_for_table_screenshot_and_result(
-                self.session_table, bet_side, min_stamp_ms=bet_time_ms, initial_round_count=initial_round_count, max_wait_s=75
+                self.session_table, bet_side, min_stamp_ms=bet_time_ms, max_wait_s=60
             )
             resolved_shot = resolve_screenshot_path(real_screenshot)
             if not resolved_shot:
@@ -530,7 +534,7 @@ class TelegramForwardBot:
 
             await asyncio.sleep(20)
 
-            # 4. Trả tin kết quả chuẩn xác 100% theo ván thực tế:
+            # 5. Trả tin kết quả chuẩn xác 100% theo ván thực tế:
             norm_winner = normalize_side(raw_winner)
             norm_bet = normalize_side(bet_side)
 
