@@ -572,7 +572,18 @@ class TelegramForwardBot:
             await asyncio.sleep(20)
 
             # 5. Trả tin kết quả chuẩn xác 100% theo ván thực tế:
-            norm_winner = normalize_side(raw_winner)
+            # ƯU TIÊN TUYỆT ĐỐI: Khóa kết quả 1:1 theo đúng file ảnh vừa gửi đi
+            winner_from_filename = None
+            if resolved_shot:
+                bname = os.path.basename(resolved_shot).upper()
+                if "_WB_" in bname or "_WB." in bname or "WINCAI" in bname:
+                    winner_from_filename = "B"
+                elif "_WP_" in bname or "_WP." in bname or "WINCON" in bname:
+                    winner_from_filename = "P"
+                elif "_WT_" in bname or "_WT." in bname or "TIE" in bname:
+                    winner_from_filename = "T"
+
+            norm_winner = winner_from_filename or normalize_side(raw_winner)
             norm_bet = normalize_side(bet_side)
 
             if self.bet_amount_label == "5000":

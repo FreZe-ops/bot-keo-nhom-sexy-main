@@ -244,7 +244,8 @@ async function saveScreenshot(target, tableName = "UNKNOWN", options = {}) {
     const cleanTable = String(tableName).trim().toUpperCase().replace(/[^A-Z0-9]/g, "") || "UNKNOWN";
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const roundStr = options.roundNum ? `_R${options.roundNum}` : "";
-    const filename = `sexy_${cleanTable}${roundStr}_${timestamp}.png`;
+    const winnerStr = options.resultWinner ? `_W${String(options.resultWinner).trim().toUpperCase()}` : "";
+    const filename = `sexy_${cleanTable}${roundStr}${winnerStr}_${timestamp}.png`;
     const filepath = path.join(SCREENSHOT_DIR, filename);
 
     let saved = false;

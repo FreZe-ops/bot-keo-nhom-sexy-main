@@ -3375,6 +3375,7 @@ async function captureTableRound(tableName, roundOptions = {}) {
     const result = await Promise.race([
       screenshotHelper.saveScreenshot(targetToScreenshot, cleanTarget, {
         roundNum: roundOptions.roundNum,
+        resultWinner: roundOptions.resultWinner,
         shoeNum: roundOptions.shoeNum,
         isFullPage: false,
         pageObj: page,
