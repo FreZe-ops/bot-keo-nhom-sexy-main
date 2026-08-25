@@ -1596,29 +1596,22 @@ async function detectSignalLost() {
             "signal lost",
             "please reload",
           ].map(norm);
-          const scan = (raw) => {
-            const t = norm(raw);
-            if (!t || t.length > 160) return false;
-            return needles.some((n) => t.includes(n));
-          };
-          if (scan(document.body?.innerText || "")) return true;
+
+          const fullText = norm(
+            document.documentElement?.innerText || document.body?.innerText || ""
+          );
+          if (needles.some((n) => fullText.includes(n))) {
+            return true;
+          }
+
           const nodes = document.querySelectorAll(
             "div, span, p, section, aside, button, label, [class*='error'], [class*='signal'], [class*='mask']"
           );
           for (const el of nodes) {
-            const txt = (el.innerText || el.textContent || "").trim();
-            if (!txt || txt.length > 120) continue;
-            try {
-              const st = window.getComputedStyle(el);
-              if (
-                st.display === "none" ||
-                st.visibility === "hidden" ||
-                Number(st.opacity) === 0
-              ) {
-                continue;
-              }
-            } catch (_) {}
-            if (scan(txt)) return true;
+            const txt = norm(el.innerText || el.textContent || "");
+            if (needles.some((n) => txt.includes(n))) {
+              return true;
+            }
           }
           return false;
         })
@@ -1654,16 +1647,7 @@ async function clickSignalLostReload() {
               .toLowerCase()
               .normalize("NFD")
               .replace(/[\u0300-\u036f]/g, "");
-          const isReloadText = (raw) => {
-            const t = norm(raw);
-            if (!t || t.length > 80) return false;
-            if (t.includes("duong truyen")) return false;
-            return (
-              t.includes("lam moi") ||
-              t.includes("refresh") ||
-              t.includes("reload")
-            );
-          };
+
           const isVisible = (el) => {
             try {
               const st = window.getComputedStyle(el);
@@ -1680,7 +1664,38 @@ async function clickSignalLostReload() {
             }
           };
 
-          // 1. Tìm phần tử chứa chữ "Tín hiệu bị mất" hoặc "Vui lòng làm mới" và click button / click chính nó
+          // 1. Tìm nút [Reload] / [Làm mới] ở thanh công cụ góc phải dưới (như trong ảnh Sexy Baccarat)
+          const allButtons = Array.from(
+            document.querySelectorAll(
+              "button, a, div, span, [role='button'], .btn-reload, .btn_reload, [class*='reload'], [class*='refresh']"
+            )
+          );
+          for (const b of allButtons) {
+            const rawTxt = (b.innerText || b.textContent || b.getAttribute('title') || '').trim();
+            const txt = norm(rawTxt);
+            const cls = String(b.className || '').toLowerCase();
+            if (
+              txt === 'reload' ||
+              txt === 'lam moi' ||
+              txt.includes('reload') ||
+              txt.includes('lam moi') ||
+              cls.includes('btn_reload') ||
+              cls.includes('btn-reload') ||
+              cls.includes('btn_refresh')
+            ) {
+              if (isVisible(b) && typeof b.click === 'function') {
+                b.click();
+                return {
+                  ok: true,
+                  via: "toolbar_reload_button",
+                  text: rawTxt,
+                  cls: b.className || "",
+                };
+              }
+            }
+          }
+
+          // 2. Tìm phần tử chứa chữ "Tín hiệu bị mất" hoặc "Vui lòng làm mới" và click
           const allEls = Array.from(document.querySelectorAll("*"));
           for (const el of allEls) {
             const txt = norm(el.innerText || el.textContent || "");
@@ -1706,7 +1721,7 @@ async function clickSignalLostReload() {
                   };
                 }
               }
-              // Click trực tiếp vào text/overlay (Sexy Baccarat cho phép click bất kỳ điểm nào trên overlay để reload)
+              // Click trực tiếp vào text / overlay
               if (isVisible(el) && typeof el.click === "function") {
                 el.click();
                 return {
@@ -1719,36 +1734,6 @@ async function clickSignalLostReload() {
             }
           }
 
-          // 2. Tìm tất cả các nút refresh / reload trên DOM
-          const reloadNodes = Array.from(
-            document.querySelectorAll(
-              "button, a, [role='button'], .btn_refresh, [class*='refresh'], [class*='reload']"
-            )
-          );
-          for (const el of reloadNodes) {
-            const txt = (
-              el.innerText ||
-              el.textContent ||
-              el.getAttribute("title") ||
-              ""
-            ).trim();
-            if (
-              !isReloadText(txt) &&
-              !/btn_refresh|refresh|reload/i.test(el.className || "")
-            ) {
-              continue;
-            }
-            if (!isVisible(el)) continue;
-            if (typeof el.click === "function") {
-              el.click();
-              return {
-                ok: true,
-                via: "global_reload_btn",
-                text: txt,
-                cls: String(el.className || "").slice(0, 100),
-              };
-            }
-          }
           return { ok: false };
         })
         .catch(() => ({ ok: false })),
@@ -1763,15 +1748,25 @@ async function clickSignalLostReload() {
     }
   }
 
-  // Fallback Playwright locator
+  // 3. Fallback Playwright click vào button text Reload / Làm mới hoặc click tâm video
   for (const f of frames) {
     try {
-      const loc = f.locator("text=/Tín hiệu bị mất|Vui lòng làm mới|Làm mới|btn_refresh|refresh/i");
-      if ((await loc.count()) > 0) {
-        await loc.first().click({ timeout: 1500, force: true });
-        console.log("[SIGNAL CLICK] Đã click bằng Playwright locator!");
+      const reloadLoc = f.locator("text=/^Reload$|Làm mới|Vui lòng làm mới/i");
+      if ((await reloadLoc.count()) > 0) {
+        await reloadLoc.first().click({ timeout: 1500, force: true });
+        console.log("[SIGNAL CLICK] Đã click bằng Playwright locator text Reload!");
         return true;
       }
+    } catch (_) {}
+  }
+
+  // 4. Click tâm vùng video (tọa độ màn hình video Sexy)
+  if (page && !page.isClosed()) {
+    try {
+      const vp = page.viewportSize() || { width: 1280, height: 720 };
+      await page.mouse.click(vp.width * 0.5, vp.height * 0.35);
+      console.log("[SIGNAL CLICK] Đã click chuột vào tâm vùng video overlay!");
+      return true;
     } catch (_) {}
   }
 
