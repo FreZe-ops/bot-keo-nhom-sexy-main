@@ -52,12 +52,14 @@
       "session_table": "C05",
       "source_username": "frezeit",
       "interval_minutes": 15,
-      "start_time": "10:00",
-      "end_time": "22:45",
+      "start_time": "00:00",
+      "end_time": "23:45",
       "bet_amount_label": "1000",
-      "opening_order": [4, 0, 1, 3],
-      "opening_delays": [20, 20, 20, 20],
+      "opening_order": [4, 0, 1],
+      "opening_delays": [20, 20, 20],
+      "send_custom_table_text": "🎲 BÀN Baccarat {table} 🎲",
       "send_table_preview": true,
+      "send_table_preview_caption": "🎲 BÀN CƯỢC: BACCARAT {table} | VÀO LỆNH NGAY NÀO AE 💸",
       "ending_order": [2],
       "ending_delays": [20]
     }

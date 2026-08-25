@@ -545,17 +545,27 @@ class TelegramForwardBot:
                 delay = opening_delays[step_num] if step_num < len(opening_delays) else 20
                 await asyncio.sleep(delay)
 
-            # Gửi ảnh chụp bàn hiện tại + Báo bàn text đẹp (nếu cấu hình bật)
+            # Gửi tin text báo bàn tùy chỉnh (nếu cấu hình bật, VD: 🎲 BÀN Baccarat C05 🎲)
+            if self.config.get('send_custom_table_text'):
+                custom_table_text = str(self.config['send_custom_table_text']).replace('{table}', self.session_table)
+                await send_text(custom_table_text, f"Đã gửi tin báo bàn {self.session_table}")
+                await asyncio.sleep(20)
+
+            # Gửi ảnh chụp bàn hiện tại KÈM CAPTION báo bàn cược
             if self.config.get('send_table_preview'):
                 preview_shot = get_latest_local_screenshot_for_table(self.session_table)
+                caption_template = self.config.get('send_table_preview_caption', '🎲 BÀN CƯỢC: BACCARAT {table} | VÀO LỆNH NGAY NÀO AE 💸')
+                preview_caption = str(caption_template).replace('{table}', self.session_table)
                 if preview_shot and os.path.exists(preview_shot):
                     try:
-                        self.log(f"Đang gửi ảnh bàn cược hiện tại: {os.path.basename(preview_shot)}...")
-                        await self.client.send_file(entity, preview_shot)
+                        self.log(f"Đang gửi ảnh bàn cược hiện tại kèm caption: {os.path.basename(preview_shot)}...")
+                        await self.client.send_file(entity, preview_shot, caption=preview_caption)
+                        self.log(f"✅ Đã gửi ảnh bàn cược kèm caption ({self.session_table})")
                     except Exception as ex:
-                        self.log(f"[LỖI GỬI ẢNH BÀN]: {ex}")
-                table_announce_text = f"🎲 BÀN CƯỢC: BACCARAT {self.session_table} | VÀO LỆNH NGAY NÀO AE 💸"
-                await send_text(table_announce_text, f"Đã báo bàn cược {self.session_table}")
+                        self.log(f"[LỖI GỬI ẢNH BÀN KÈM CAPTION]: {ex}")
+                        await send_text(preview_caption, f"Đã báo bàn cược {self.session_table}")
+                else:
+                    await send_text(preview_caption, f"Đã báo bàn cược {self.session_table}")
                 await asyncio.sleep(20)
 
             # 2. Chờ 20s trước, sau đó mới lấy tin hô Con / Cái trực tiếp từ bàn đó
