@@ -74,40 +74,69 @@ def get_account_by_id(account_id):
             return acc
     return None
 
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+SCREENSHOT_DIR = os.path.join(ROOT_DIR, 'public', 'screenshots')
+
+def resolve_screenshot_path(filepath):
+    if not filepath:
+        return None
+    if os.path.isabs(filepath) and os.path.exists(filepath):
+        return filepath
+    candidates = [
+        os.path.join(ROOT_DIR, filepath),
+        os.path.join(ROOT_DIR, 'public', 'screenshots', os.path.basename(filepath)),
+        os.path.join(ROOT_DIR, 'public', filepath),
+        os.path.join(ROOT_DIR, 'screenshots', os.path.basename(filepath)),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return None
+
 def is_real_screenshot_file(filepath):
-    if not filepath or not os.path.exists(filepath):
+    if not filepath:
         return False
-    norm = str(filepath).replace("\\", "/").lower()
+    resolved = resolve_screenshot_path(filepath)
+    if not resolved or not os.path.exists(resolved):
+        return False
+    norm = str(resolved).replace("\\", "/").lower()
     name = os.path.basename(norm)
     if "/images/" in norm and "/screenshots/" not in norm:
         return False
     try:
-        if os.path.getsize(filepath) < 40000:
+        if os.path.getsize(resolved) < 40000:
             return False
     except OSError:
         return False
     return ("/screenshots/" in norm) or name.startswith("sexy_") or name.startswith("real_")
 
 def get_latest_local_screenshot_for_table(table_name="C01"):
-    if not os.path.exists(SCREENSHOT_DIR):
-        return None
-    try:
-        tbl_norm = table_name.lower()
-        files = [
-            os.path.join(SCREENSHOT_DIR, f)
-            for f in os.listdir(SCREENSHOT_DIR)
-            if f.lower().endswith(IMAGE_EXTENSIONS) and not f.startswith('.')
-        ]
-        if not files:
-            return None
-        tbl_files = [f for f in files if f"_{tbl_norm}_" in f.lower() or f"{tbl_norm}_" in f.lower()]
-        target_list = tbl_files if tbl_files else files
-        target_list.sort(key=lambda x: os.path.getmtime(x), reverse=True)
-        for f in target_list[:5]:
-            if is_real_screenshot_file(f):
-                return f
-    except Exception:
-        pass
+    search_dirs = [
+        os.path.join(ROOT_DIR, 'public', 'screenshots'),
+        os.path.join(ROOT_DIR, 'screenshots'),
+        os.path.join(ROOT_DIR, 'images', 'sexy'),
+        os.path.join(ROOT_DIR, 'images'),
+    ]
+    tbl_norm = table_name.lower()
+    for sdir in search_dirs:
+        if not os.path.exists(sdir):
+            continue
+        try:
+            files = [
+                os.path.join(sdir, f)
+                for f in os.listdir(sdir)
+                if f.lower().endswith(IMAGE_EXTENSIONS) and not f.startswith('.')
+            ]
+            if not files:
+                continue
+            tbl_files = [f for f in files if f"_{tbl_norm}_" in f.lower() or f"{tbl_norm}_" in f.lower()]
+            target_list = tbl_files if tbl_files else files
+            target_list.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+            for f in target_list:
+                if is_real_screenshot_file(f):
+                    return f
+        except Exception:
+            pass
     return None
 
 def get_api_headers():
@@ -482,16 +511,22 @@ class TelegramForwardBot:
             real_screenshot, raw_winner = await wait_for_table_screenshot_and_result(
                 self.session_table, bet_side, min_stamp_ms=bet_time_ms, initial_round_count=initial_round_count, max_wait_s=75
             )
-            if not real_screenshot:
+            resolved_shot = resolve_screenshot_path(real_screenshot)
+            if not resolved_shot:
+                resolved_shot = get_latest_local_screenshot_for_table(self.session_table)
+            if not resolved_shot:
                 res_type = "wincai" if bet_side == 'B' else "wincon"
-                real_screenshot = get_fallback_image(res_type)
+                resolved_shot = get_fallback_image(res_type)
 
-            if real_screenshot and os.path.exists(real_screenshot):
+            if resolved_shot and os.path.exists(resolved_shot):
                 try:
-                    await self.client.send_file(entity, real_screenshot)
-                    self.log(f"Đã gửi ảnh kết quả thật bàn {self.session_table}: {os.path.basename(real_screenshot)}")
+                    self.log(f"Đang gửi ảnh kết quả thật: {os.path.basename(resolved_shot)}...")
+                    await self.client.send_file(entity, resolved_shot)
+                    self.log(f"✅ Đã gửi ảnh kết quả thật bàn {self.session_table}: {os.path.basename(resolved_shot)}")
                 except Exception as ex:
                     self.log(f"[LỖI GỬI ẢNH]: {ex}")
+            else:
+                self.log(f"[LỖI] Không tìm thấy file ảnh để gửi! (real={real_screenshot})")
 
             await asyncio.sleep(20)
 

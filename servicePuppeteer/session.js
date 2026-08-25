@@ -1591,10 +1591,10 @@ async function detectSignalLost() {
           const needles = [
             "tin hieu bi mat",
             "tín hiệu bị mất",
-            "vui long lam moi",
-            "vui lòng làm mới",
             "signal lost",
-            "please reload",
+            "video signal lost",
+            "mat ket noi video",
+            "mất kết nối video",
           ].map(norm);
 
           const fullText = norm(
