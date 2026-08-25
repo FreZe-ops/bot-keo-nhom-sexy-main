@@ -42,11 +42,11 @@
     },
     {
       "id": "bot_forward_3",
-      "name": "TRÂM ANH - 1000",
+      "name": "MINH (@MINHQUAN68799) - 1000",
       "phone": "+84566123980",
       "api_id": 18214111,
       "api_hash": "2aa34f73907e52b2a05147878356e5e9",
-      "twofa": "",
+      "twofa": "797979",
       "group_id": "-1003985026080",
       "name_service": "NS3",
       "session_table": "C05",
