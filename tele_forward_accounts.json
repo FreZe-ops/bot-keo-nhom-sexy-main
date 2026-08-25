@@ -57,7 +57,6 @@
       "bet_amount_label": "1000",
       "opening_order": [4, 0, 1],
       "opening_delays": [20, 20, 20],
-      "send_custom_table_text": "🎲 BÀN Baccarat {table} 🎲",
       "send_table_preview": true,
       "send_table_preview_caption": "🎲 BÀN CƯỢC: BACCARAT {table} | VÀO LỆNH NGAY NÀO AE 💸",
       "ending_order": [2],
