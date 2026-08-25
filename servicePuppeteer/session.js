@@ -3604,6 +3604,42 @@ socket.on("request_change_table", async (data) => {
   }
 });
 
+let lastKnownAccountBalance = null;
+
+/** Đọc số dư tài khoản trực tiếp từ DOM game */
+async function readAccountBalance() {
+  const frames = getInTableBetFrames();
+  for (const f of frames) {
+    if (!f || (typeof f.isClosed === "function" && f.isClosed())) continue;
+    const bal = await f
+      .evaluate(() => {
+        // 1. Quét toàn bộ text tìm "Số dư 0.00" hoặc "Balance: 100"
+        const allNodes = Array.from(document.querySelectorAll("*"));
+        for (const el of allNodes) {
+          const txt = (el.innerText || el.textContent || "").trim();
+          const m = txt.match(/(?:Số dư|Balance|Số Tiền)\s*[:]?\s*([0-9.,]+)/i);
+          if (m) {
+            const parsed = parseFloat(m[1].replace(/,/g, ""));
+            if (!isNaN(parsed)) return parsed;
+          }
+        }
+        // 2. Tìm selector cụ thể
+        const balEl = document.querySelector(".balance, [class*='balance'], [id*='balance'], .user-balance, .header-balance");
+        if (balEl) {
+          const num = (balEl.innerText || balEl.textContent || "").replace(/[^0-9.]/g, "");
+          if (num) {
+            const parsed = parseFloat(num);
+            if (!isNaN(parsed)) return parsed;
+          }
+        }
+        return null;
+      })
+      .catch(() => null);
+    if (bal !== null && !isNaN(bal)) return bal;
+  }
+  return null;
+}
+
 let lastRoundCaptureAt = 0;
 let lastRoundCaptureWinner = null;
 let lastRoundCaptureTable = null;
@@ -3654,11 +3690,36 @@ async function captureRoundIfReady(tableName, latestRound, winner, source) {
       roundNum: latestRound?.id,
       resultWinner: w,
     });
+
     if (cap && cap.success !== false) {
       lastRoundCaptureAt = Date.now();
       lastRoundCaptureWinner = w;
       lastRoundCaptureTable = currentInTable;
       lastRoundCaptureKey = captureKey;
+
+      // Đọc và kiểm tra biến động số dư tài khoản sau mỗi ván
+      try {
+        const curBal = await readAccountBalance();
+        if (curBal !== null) {
+          if (lastKnownAccountBalance !== null) {
+            const diff = curBal - lastKnownAccountBalance;
+            if (diff > 0) {
+              console.log(`💰 [BIẾN ĐỘNG SỐ DƯ] Vừa THẮNG: +${diff.toLocaleString()}đ | Số dư mới: ${curBal.toLocaleString()}đ`);
+              await helper.appendToLog(`💰 [SỐ DƯ] THẮNG +${diff.toLocaleString()}đ → Số dư hiện tại: ${curBal.toLocaleString()}đ`, logsNameProgress);
+            } else if (diff < 0) {
+              console.log(`💸 [BIẾN ĐỘNG SỐ DƯ] Vừa THUA: -${Math.abs(diff).toLocaleString()}đ | Số dư mới: ${curBal.toLocaleString()}đ`);
+              await helper.appendToLog(`💸 [SỐ DƯ] THUA -${Math.abs(diff).toLocaleString()}đ → Số dư hiện tại: ${curBal.toLocaleString()}đ`, logsNameProgress);
+            } else {
+              console.log(`ℹ️ [SỐ DƯ BÀN] Giữ nguyên: ${curBal.toLocaleString()}đ`);
+            }
+          } else {
+            console.log(`ℹ️ [SỐ DƯ HIỆN TẠI]: ${curBal.toLocaleString()}đ`);
+            await helper.appendToLog(`ℹ️ [SỐ DƯ BAN ĐẦU]: ${curBal.toLocaleString()}đ`, logsNameProgress);
+          }
+          lastKnownAccountBalance = curBal;
+        }
+      } catch (_) {}
+
       return true;
     }
   } catch (err) {
