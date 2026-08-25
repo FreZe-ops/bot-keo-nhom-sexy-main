@@ -55,10 +55,14 @@
       "start_time": "00:00",
       "end_time": "23:45",
       "bet_amount_label": "1000",
+      "is_virtual": true,
+      "win_rate": 0.75,
+      "loss_rate": 0.20,
+      "tie_rate": 0.05,
       "opening_order": [4, 0, 1],
       "opening_delays": [20, 20, 20],
       "send_table_preview": true,
-      "send_table_preview_caption": "🎲 BÀN CƯỢC: BACCARAT {table} | CHUẨN BỊ VÀO LỆNH NÀO AE 💸",
+      "send_table_preview_caption": "🎲 BÀN CƯỢC: BACCARAT | CHUẨN BỊ VÀO LỆNH NÀO AE 💸",
       "ending_order": [2],
       "ending_delays": [20]
     }

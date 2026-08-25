@@ -139,6 +139,67 @@ def get_latest_local_screenshot_for_table(table_name="C01"):
             pass
     return None
 
+def get_any_table_preview_screenshot():
+    """Lấy 1 ảnh bàn cược tổng quan Sexy Baccarat bất kỳ sạch sẽ từ thư mục ảnh chụp gần đây hoặc ảnh mẫu."""
+    search_dirs = [
+        os.path.join(ROOT_DIR, 'public', 'screenshots'),
+        os.path.join(ROOT_DIR, 'screenshots'),
+        os.path.join(ROOT_DIR, 'images', 'sexy'),
+        os.path.join(ROOT_DIR, 'images'),
+    ]
+    for sdir in search_dirs:
+        if not os.path.exists(sdir):
+            continue
+        try:
+            files = [
+                os.path.join(sdir, f)
+                for f in os.listdir(sdir)
+                if f.lower().endswith(IMAGE_EXTENSIONS) and not f.startswith('.')
+            ]
+            if files:
+                files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+                return files[0]
+        except Exception:
+            pass
+    for fb_type in ['wincai', 'wincon']:
+        fb = get_fallback_image(fb_type)
+        if fb and os.path.exists(fb):
+            return fb
+    return None
+
+def get_virtual_result_image(bet_side, outcome):
+    """
+    Lấy ảnh kết quả từ folder ảnh ảo theo cửa cược (B/P) và kết quả (WIN/LOSS/TIE).
+    - WIN: cược B -> lấy wincai, cược P -> lấy wincon
+    - LOSS: cược B -> lấy wincon / losecai, cược P -> lấy wincai / losecon
+    - TIE: lấy tie
+    """
+    if outcome == 'TIE':
+        target_folder = 'images/tie'
+    elif outcome == 'WIN':
+        target_folder = 'images/wincai' if bet_side == 'B' else 'images/wincon'
+    else:  # LOSS
+        target_folder = 'images/wincon' if bet_side == 'B' else 'images/wincai'
+
+    candidates = []
+    for base_dir in [ROOT_DIR, r'C:\apps\bot-keo-nhom-bcr-main', os.path.dirname(os.path.abspath(__file__)), '.']:
+        fpath = os.path.join(base_dir, target_folder)
+        if os.path.isdir(fpath):
+            imgs = [
+                os.path.join(fpath, f)
+                for f in os.listdir(fpath)
+                if f.lower().endswith(IMAGE_EXTENSIONS) and not f.startswith('.')
+            ]
+            if imgs:
+                candidates.extend(imgs)
+                break
+
+    if candidates:
+        return random.choice(candidates)
+
+    res_type = 'tie' if outcome == 'TIE' else ('wincai' if (outcome == 'WIN') == (bet_side == 'B') else 'wincon')
+    return get_fallback_image(res_type)
+
 def get_api_headers():
     return {
         'User-Agent': 'Mozilla/5.0',
@@ -536,6 +597,96 @@ class TelegramForwardBot:
                     await self.client.send_message(entity, txt)
                 except Exception as ex:
                     self.log(f"[LỖI SEND TEXT]: {ex}")
+
+            # NẾU LÀ BOT CHẠY CHẾ ĐỘ ẢO (VIRTUAL / PRESET IMAGES & RATES)
+            if self.config.get('is_virtual', False):
+                self.log(f"BẮT ĐẦU PHIÊN ẢO (Tỉ lệ Thắng: {float(self.config.get('win_rate', 0.75))*100:.0f}% | Mức cược: {self.bet_amount_label})")
+
+                # 1. Forward các tin mở đầu (Ảnh 5, Ảnh 1, Ảnh 2)
+                opening_order = self.config.get('opening_order', [4, 0, 1])
+                opening_delays = self.config.get('opening_delays', [20] * len(opening_order))
+                for step_num, idx in enumerate(opening_order):
+                    await forward_idx(idx, f"Tin mở đầu {step_num + 1}/{len(opening_order)}")
+                    delay = opening_delays[step_num] if step_num < len(opening_delays) else 20
+                    await asyncio.sleep(delay)
+
+                # Gửi ảnh chụp bàn cược kèm caption (không báo số bàn)
+                if self.config.get('send_table_preview'):
+                    preview_caption = self.config.get('send_table_preview_caption', '🎲 BÀN CƯỢC: BACCARAT | CHUẨN BỊ VÀO LỆNH NÀO AE 💸')
+                    preview_shot = get_any_table_preview_screenshot()
+                    if preview_shot and os.path.exists(preview_shot):
+                        try:
+                            self.log(f"Đang gửi ảnh bàn cược kèm caption: {os.path.basename(preview_shot)}...")
+                            await self.client.send_file(entity, preview_shot, caption=preview_caption)
+                            self.log(f"✅ Đã gửi ảnh bàn cược kèm caption (Ảo)")
+                        except Exception as ex:
+                            self.log(f"[LỖI GỬI ẢNH BÀN ẢO]: {ex}")
+                            await send_text(preview_caption, "Đã báo bàn cược")
+                    else:
+                        await send_text(preview_caption, "Đã báo bàn cược")
+                    await asyncio.sleep(20)
+
+                # 2. Chờ 20s rồi phát lệnh hô Con/Cái
+                self.log("Chờ 20s trước khi phát lệnh hô...")
+                await asyncio.sleep(20)
+
+                bet_side = random.choice(['P', 'B'])  # P=Con, B=Cái
+                bet_text_base = "🔵 CON" if bet_side == 'P' else "🔴 CÁI"
+                bet_text_to_send = f"{bet_text_base} {self.bet_amount_label}"
+                await send_text(bet_text_to_send, "Đã gửi tin HÔ (Ảo)")
+
+                # 3. Chờ 20s cho ván bài lật xong
+                self.log(f"Đã hô lệnh ({bet_text_to_send}). Chờ cố định 20s cho ván bài lật xong...")
+                await asyncio.sleep(20)
+
+                # 4. Quyết định kết quả theo tỉ lệ (75% Thắng, 20% Thua, 5% Hòa)
+                win_rate = float(self.config.get('win_rate', 0.75))
+                loss_rate = float(self.config.get('loss_rate', 0.20))
+                tie_rate = float(self.config.get('tie_rate', 0.05))
+
+                roll = random.random()
+                if roll < win_rate:
+                    outcome = 'WIN'
+                elif roll < (win_rate + loss_rate):
+                    outcome = 'LOSS'
+                else:
+                    outcome = 'TIE'
+
+                resolved_shot = get_virtual_result_image(bet_side, outcome)
+                if resolved_shot and os.path.exists(resolved_shot):
+                    try:
+                        self.log(f"Đang gửi ảnh kết quả ({outcome}): {os.path.basename(resolved_shot)}...")
+                        await self.client.send_file(entity, resolved_shot)
+                        self.log(f"✅ Đã gửi ảnh kết quả ảo: {os.path.basename(resolved_shot)}")
+                    except Exception as ex:
+                        self.log(f"[LỖI GỬI ẢNH KẾT QUẢ ẢO]: {ex}")
+
+                await asyncio.sleep(20)
+
+                # 5. Gửi tin kết quả
+                if outcome == 'WIN':
+                    result_text = f"🎉 Húp +{self.bet_amount_label}"
+                elif outcome == 'LOSS':
+                    result_text = f"❌ Thua -{self.bet_amount_label}"
+                else:
+                    result_text = "🤝 Hòa +0"
+
+                self.log(f"[XÁC ĐỊNH KẾT QUẢ ẢO] Kèo hô={bet_text_to_send} | Outcome={outcome} | Trả tin: {result_text}")
+                await send_text(result_text, f"Đã gửi tin KẾT QUẢ ẢO ({outcome}): {result_text}")
+                await asyncio.sleep(20)
+
+                # 6. Chốt ca bằng Ảnh 3 (index 2)
+                ending_order = self.config.get('ending_order', [2])
+                ending_delays = self.config.get('ending_delays', [20] * len(ending_order))
+                for step_num, idx in enumerate(ending_order):
+                    await forward_idx(idx, f"Tin kết thúc (tin thứ {idx + 1}, index {idx})")
+                    delay = ending_delays[step_num] if step_num < len(ending_delays) else 20
+                    await asyncio.sleep(delay)
+
+                self.log(f"HOÀN THÀNH CA ẢO CHO NHÓM ({self.group_id}) THÀNH CÔNG!\n")
+                return
+
+            # NẾU LÀ BOT CHẠY CHẾ ĐỘ THẬT (SYNC VỚI TRANG GAME)
 
             # 1. Forward các tin mở đầu (index theo config, cách nhau 20s)
             opening_order = self.config.get('opening_order', [0, 1, 2, 3])
