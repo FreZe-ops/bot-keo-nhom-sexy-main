@@ -192,37 +192,54 @@ async def get_healthy_active_sessions():
         log(f"[WARN] Lỗi kiểm tra session health: {e}")
     return healthy
 
-async def select_next_healthy_session(previous_table=None, exclude_tables=None, bot_name=""):
+GLOBAL_BOT_TABLE_CLAIMS = {}
+GLOBAL_CLAIM_LOCK = asyncio.Lock()
+
+async def select_next_healthy_session(bot_id, previous_table=None, preferred_sessions=None, bot_name=""):
     """
-    Chọn 1 bàn cào mượt mà nhất, tự động đổi sang bàn khác với ca trước và tránh trùng bàn với bot khác.
+    Chọn 1 bàn cào mượt mà nhất, tự động đổi sang bàn khác với ca trước và TUYỆT ĐỐI không trùng bàn với bot khác.
     """
-    healthy = await get_healthy_active_sessions()
-    
-    if not healthy:
-        log(f"[WARN] Không tìm thấy session nào đạt chuẩn sức khỏe. Fallback về Bàn C01 (NS1).")
-        return 'NS1', 'C01'
+    async with GLOBAL_CLAIM_LOCK:
+        healthy = await get_healthy_active_sessions()
+        
+        if not healthy:
+            fallback_ns = "NS1" if bot_id == "bot_forward_1" else "NS2"
+            fallback_table = "C01" if bot_id == "bot_forward_1" else "C02"
+            GLOBAL_BOT_TABLE_CLAIMS[bot_id] = fallback_table
+            log(f"[WARN] Không tìm thấy session nào đạt chuẩn sức khỏe. Fallback về Bàn {fallback_table} ({fallback_ns}).")
+            return fallback_ns, fallback_table
 
-    # Sắp xếp theo độ tươi mới của ảnh
-    healthy.sort(key=lambda x: x['age_s'])
+        # Sắp xếp theo độ tươi mới của ảnh
+        healthy.sort(key=lambda x: x['age_s'])
 
-    exclude_set = set()
-    if previous_table:
-        exclude_set.add(str(previous_table).upper().strip())
-    if exclude_tables:
-        for t in exclude_tables:
-            if t:
-                exclude_set.add(str(t).upper().strip())
+        # Danh sách các bàn đang bị bot khác sử dụng / khóa
+        claimed_tables = {str(t).upper().strip() for b_id, t in GLOBAL_BOT_TABLE_CLAIMS.items() if b_id != bot_id and t}
 
-    candidates = [h for h in healthy if h['table'] not in exclude_set]
-    if not candidates:
-        other_bot_excludes = set(str(t).upper().strip() for t in exclude_tables if t) if exclude_tables else set()
-        candidates = [h for h in healthy if h['table'] not in other_bot_excludes]
+        # Loại trừ: Bàn đang bị bot khác dùng + Bàn của chính bot này ở ca trước
+        exclude_set = set(claimed_tables)
+        if previous_table:
+            exclude_set.add(str(previous_table).upper().strip())
+
+        candidates = [h for h in healthy if h['table'] not in exclude_set]
+        
+        # Nếu loại trừ cả previous_table làm hết ứng viên -> chỉ cần không trùng với bot khác (claimed_tables)
+        if not candidates:
+            candidates = [h for h in healthy if h['table'] not in claimed_tables]
+            
         if not candidates:
             candidates = healthy
 
-    chosen = random.choice(candidates)
-    log(f"[{bot_name or 'DYNAMIC ROTATION'}] Đã chọn Session {chosen['name_service']} - Bàn {chosen['table']} (Ảnh mới cách {chosen['age_s']:.1f}s, loại trừ: {list(exclude_set)})")
-    return chosen['name_service'], chosen['table']
+        # Ưu tiên các Session được gán riêng (bot1 -> NS1/NS3, bot2 -> NS2/NS4)
+        if preferred_sessions:
+            pref_candidates = [c for c in candidates if c['name_service'] in preferred_sessions]
+            if pref_candidates:
+                candidates = pref_candidates
+
+        chosen = random.choice(candidates)
+        GLOBAL_BOT_TABLE_CLAIMS[bot_id] = chosen['table']
+        
+        log(f"[{bot_name or 'DYNAMIC ROTATION'}] Đã chọn Session {chosen['name_service']} - Bàn {chosen['table']} (Ảnh mới cách {chosen['age_s']:.1f}s | Bàn bot khác đang chạy: {list(claimed_tables)} | Loại trừ: {list(exclude_set)})")
+        return chosen['name_service'], chosen['table']
 
 async def get_live_table_prediction(table_name="C01", name_service="NS1"):
     """
@@ -384,6 +401,7 @@ class TelegramForwardBot:
         self.bet_amount_label = str(config.get('bet_amount_label', '10%')).strip()
         self.last_used_table = None
         self.is_running_round = False
+        self.preferred_sessions = ['NS1', 'NS3'] if self.bot_id == 'bot_forward_1' else ['NS2', 'NS4']
         
         phone_digits = ''.join(c for c in self.phone if c.isdigit())
         self.session_name = f'user_session_{phone_digits}' if phone_digits else f'user_session_{self.bot_id}'
@@ -481,8 +499,9 @@ class TelegramForwardBot:
         try:
             # 0. TỰ ĐỘNG CHỌN BÀN KHỎE MẠNH VÀ KHÔNG TRÙNG VỚI BOT KHÁC
             selected_ns, selected_table = await select_next_healthy_session(
+                bot_id=self.bot_id,
                 previous_table=self.last_used_table,
-                exclude_tables=exclude_tables,
+                preferred_sessions=self.preferred_sessions,
                 bot_name=self.name
             )
             self.name_service = selected_ns
@@ -615,6 +634,7 @@ class TelegramForwardBot:
 
             self.log(f"HOÀN THÀNH CA CHO NHÓM ({self.group_id}) THEO BÀN {self.session_table} THÀNH CÔNG!\n")
         finally:
+            GLOBAL_BOT_TABLE_CLAIMS.pop(self.bot_id, None)
             self.is_running_round = False
 
 def generate_slots_for_config(interval=10, start_str="10:00", end_str="23:00"):
