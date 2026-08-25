@@ -481,47 +481,35 @@ app.post("/api/place-bet", (req, res) => {
     : currentTargetTable || null;
   const bet = betSide || side || "P";
   const reqNs = String(nameService || "").trim().toUpperCase();
-  let ownerNs = null;
+
+  let ownerNs = reqNs || null;
   for (const [ns, info] of Object.entries(activeTablesByNs)) {
     if (info?.tableName === key) {
       ownerNs = ns;
       break;
     }
   }
-  if (!key || key === "NONE" || key === "LOBBY" || !ownerNs) {
-    console.log(`[API PLACE BET BLOCKED] Playwright chưa vào bàn — bỏ qua`);
-    return res.status(409).json({
-      success: false,
-      message: "Playwright chưa vào bàn (chưa có active_table)",
-    });
-  }
-  if (reqNs && reqNs !== ownerNs) {
-    console.log(
-      `[API PLACE BET BLOCKED] ${reqNs} đặt ${key} nhưng bàn thuộc ${ownerNs}`
-    );
-    return res.status(409).json({
-      success: false,
-      message: `Bàn ${key} đang do ${ownerNs} giữ`,
-    });
-  }
+
   console.log(
-    `[API PLACE BET] Bot Tele đặt cược bàn ${key} (${ownerNs || "?"}) -> ${
+    `[API PLACE BET] Bot đặt cược bàn ${key || "ANY"} (${ownerNs || reqNs || "ALL"}) -> ${
       String(bet).toUpperCase().startsWith("B") ? "CÁI" : "CON"
-    }`
+    } (amount=${betAmount || "default"})`
   );
+
   io.emit("place_bet", {
     tableName: key,
     betSide: bet,
     side: bet,
     betAmount: Number(betAmount) || undefined,
-    nameService: ownerNs,
+    nameService: ownerNs || reqNs || undefined,
   });
+
   return res.json({
     success: true,
     tableName: key,
     betSide: bet,
     betAmount: Number(betAmount) || null,
-    nameService: ownerNs,
+    nameService: ownerNs || reqNs || null,
   });
 });
 
