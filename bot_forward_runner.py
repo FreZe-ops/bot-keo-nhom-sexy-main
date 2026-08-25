@@ -308,8 +308,8 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
                     last_known_shot = filepath
                     last_known_winner = raw_winner
 
-                    # Đảm bảo đây là ván cược mới thật sự (sau ít nhất 18s hoặc số round tăng)
-                    is_new_round = (stamp >= min_valid_stamp) or (initial_round_count > 0 and shot_round > initial_round_count)
+                    # Đảm bảo đây là ván cược mới thật sự (sau ít nhất 18s từ lúc hô lệnh)
+                    is_new_round = (stamp >= min_valid_stamp)
                     if is_new_round:
                         log(f"[WAIT RESULT] Đã nhận ảnh chụp thật ván vừa cược bàn {table_name}: {os.path.basename(filepath)} | Kết quả mở: {raw_winner} (sau {time.time() - start_time:.1f}s)")
                         return filepath, raw_winner
