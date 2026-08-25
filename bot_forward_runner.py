@@ -446,6 +446,19 @@ def request_place_bet_api(table_name, bet_side, name_service=None, bet_amount=No
         log(f"⚠️ [AUTO BET API ERROR] Không thể gửi lệnh đặt cược: {ex}")
         return None
 
+SHARED_TELEGRAM_CLIENTS = {}
+
+async def get_or_create_client(session_name, api_id, api_hash):
+    if session_name in SHARED_TELEGRAM_CLIENTS:
+        client = SHARED_TELEGRAM_CLIENTS[session_name]
+        if not client.is_connected():
+            await client.connect()
+        return client
+    client = TelegramClient(session_name, api_id, api_hash)
+    await client.connect()
+    SHARED_TELEGRAM_CLIENTS[session_name] = client
+    return client
+
 class TelegramForwardBot:
     def __init__(self, config):
         self.config = config
@@ -478,8 +491,7 @@ class TelegramForwardBot:
         log(msg, self.name)
 
     async def connect_and_login(self, interactive=True):
-        self.client = TelegramClient(self.session_name, self.api_id, self.api_hash)
-        await self.client.connect()
+        self.client = await get_or_create_client(self.session_name, self.api_id, self.api_hash)
         
         if await self.client.is_user_authorized():
             me = await self.client.get_me()
