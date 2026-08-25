@@ -3394,6 +3394,13 @@ async function captureTableRound(tableName, roundOptions = {}) {
       return { success: false, reason: "CAPTURE_TIMEOUT" };
     }
 
+    // Xử lý khi ảnh bị mất tín hiệu video (màn hình đen)
+    if (result?.fatalUi === "SIGNAL_LOST" || await detectSignalLost().catch(() => false)) {
+      console.warn(`[SCREENSHOT REJECT] Bàn ${cleanTarget} bị mất tín hiệu video — Tự động bấm Reload...`);
+      await handleInTableSignalLost().catch(() => {});
+      return { success: false, reason: "SIGNAL_LOST" };
+    }
+
     // Text kick có thể nằm hoàn toàn trên canvas, không thể thấy qua innerText.
     // screenshotHelper sẽ xóa ảnh đó; session phải restart và tuyệt đối không notify.
     if (result?.fatalUi === "SESSION_EXPIRED") {
