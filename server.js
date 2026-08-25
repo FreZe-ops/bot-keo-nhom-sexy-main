@@ -527,21 +527,30 @@ app.post("/api/notify-screenshot", (req, res) => {
     const raw = String(tableName).trim().toUpperCase();
     const m = raw.match(/C?0*(\d+)/);
     const key = m ? `C${m[1].padStart(2, "0")}` : raw;
-    const itemData = {
-      tableName: key,
-      filename,
-      filepath,
-      url,
-      roundNum: roundNum || null,
-      resultWinner: resultWinner || null,
-      nameService: nameService || "NS",
-      stampTime: Date.now(),
-    };
-    latestScreenshots[key] = itemData;
-    console.log(
-      `[API SCREENSHOT NOTIFY] ${key} (${nameService || "NS"}) Round #${roundNum}, Winner: ${resultWinner} -> ${filepath}`
-    );
-    io.emit("screenshot_ready", itemData);
+    const normWin = String(resultWinner || "").trim().toUpperCase();
+
+    // Chỉ lưu và phát sóng nếu ĐÚNG là ảnh có kết quả B/P/T hoàn chỉnh
+    if (normWin === "B" || normWin === "P" || normWin === "T") {
+      const itemData = {
+        tableName: key,
+        filename,
+        filepath,
+        url,
+        roundNum: roundNum || null,
+        resultWinner: normWin,
+        nameService: nameService || "NS",
+        stampTime: Date.now(),
+      };
+      latestScreenshots[key] = itemData;
+      console.log(
+        `[API SCREENSHOT NOTIFY] ${key} (${nameService || "NS"}) Round #${roundNum}, Winner: ${normWin} -> ${filepath}`
+      );
+      io.emit("screenshot_ready", itemData);
+    } else {
+      console.log(
+        `[API SCREENSHOT REJECT] Bỏ qua ảnh không có kết quả B/P/T (đang đếm giây/chưa mở): ${filename}`
+      );
+    }
   }
   return res.json({ success: true });
 });

@@ -3038,8 +3038,6 @@ async function enterTargetTable(
 
     startActiveTableHeartbeat();
 
-    await captureTableRound(finalTable, { roundNum: "INIT_" + Date.now() }).catch(() => {});
-
     return { success: true, tableName: finalTable };
   } catch (error) {
     await helper.appendToLog(`Lỗi khi vào bàn: ${error.message}`, logsNameProgress);

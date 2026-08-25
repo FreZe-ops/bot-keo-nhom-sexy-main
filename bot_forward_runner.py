@@ -110,6 +110,18 @@ def is_real_screenshot_file(filepath):
         return False
     return ("/screenshots/" in norm) or name.startswith("sexy_") or name.startswith("real_")
 
+def extract_winner_from_filename(filepath):
+    if not filepath:
+        return None
+    bname = os.path.basename(filepath).upper()
+    if "_WB_" in bname or "_WB." in bname or "WINCAI" in bname:
+        return "B"
+    if "_WP_" in bname or "_WP." in bname or "WINCON" in bname:
+        return "P"
+    if "_WT_" in bname or "_WT." in bname or "TIE" in bname:
+        return "T"
+    return None
+
 def get_latest_local_screenshot_for_table(table_name="C01"):
     search_dirs = [
         os.path.join(ROOT_DIR, 'public', 'screenshots'),
@@ -133,7 +145,7 @@ def get_latest_local_screenshot_for_table(table_name="C01"):
             target_list = tbl_files if tbl_files else files
             target_list.sort(key=lambda x: os.path.getmtime(x), reverse=True)
             for f in target_list:
-                if is_real_screenshot_file(f):
+                if is_real_screenshot_file(f) and extract_winner_from_filename(f):
                     return f
         except Exception:
             pass
@@ -383,14 +395,19 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
                 shot_round = int(shot_data.get('roundNum') or 0)
                 
                 if filepath and os.path.exists(filepath) and is_real_screenshot_file(filepath):
-                    last_known_shot = filepath
-                    last_known_winner = raw_winner
+                    file_win = extract_winner_from_filename(filepath)
+                    norm_win = normalize_side(raw_winner) or file_win
+                    
+                    # CHỈ CHẤP NHẬN ẢNH CÓ KẾT QUẢ B/P/T RÕ RÀNG (KHÔNG CHỤP LÚC ĐANG ĐẾM GIÂY)
+                    if norm_win in ('B', 'P', 'T') and file_win:
+                        last_known_shot = filepath
+                        last_known_winner = norm_win
 
-                    # Đảm bảo đây là ván cược mới thật sự (sau ít nhất 18s từ lúc hô lệnh)
-                    is_new_round = (stamp >= min_valid_stamp)
-                    if is_new_round:
-                        log(f"[WAIT RESULT] Đã nhận ảnh chụp thật ván vừa cược bàn {table_name}: {os.path.basename(filepath)} | Kết quả mở: {raw_winner} (sau {time.time() - start_time:.1f}s)")
-                        return filepath, raw_winner
+                        # Đảm bảo đây là ván cược mới thật sự (sau ít nhất 18s từ lúc hô lệnh)
+                        is_new_round = (stamp >= min_valid_stamp)
+                        if is_new_round:
+                            log(f"[WAIT RESULT] Đã nhận ảnh chụp thật ván vừa cược bàn {table_name}: {os.path.basename(filepath)} | Kết quả mở: {norm_win} (sau {time.time() - start_time:.1f}s)")
+                            return filepath, norm_win
         except Exception:
             pass
         await asyncio.sleep(2)
@@ -402,7 +419,8 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
 
     # Fallback an toàn
     local_shot = get_latest_local_screenshot_for_table(table_name)
-    return local_shot, bet_side
+    local_winner = extract_winner_from_filename(local_shot) if local_shot else bet_side
+    return local_shot, (local_winner or bet_side)
 
 def get_fallback_image(result_type):
     target_dir = RESULT_IMAGE_DIRS.get(result_type, 'images/wincai')
