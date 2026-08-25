@@ -610,20 +610,10 @@ class TelegramForwardBot:
                     delay = opening_delays[step_num] if step_num < len(opening_delays) else 20
                     await asyncio.sleep(delay)
 
-                # Gửi ảnh chụp bàn cược kèm caption (không báo số bàn)
-                if self.config.get('send_table_preview'):
-                    preview_caption = self.config.get('send_table_preview_caption', '🎲 BÀN CƯỢC: BACCARAT | CHUẨN BỊ VÀO LỆNH NÀO AE 💸')
-                    preview_shot = get_any_table_preview_screenshot()
-                    if preview_shot and os.path.exists(preview_shot):
-                        try:
-                            self.log(f"Đang gửi ảnh bàn cược kèm caption: {os.path.basename(preview_shot)}...")
-                            await self.client.send_file(entity, preview_shot, caption=preview_caption)
-                            self.log(f"✅ Đã gửi ảnh bàn cược kèm caption (Ảo)")
-                        except Exception as ex:
-                            self.log(f"[LỖI GỬI ẢNH BÀN ẢO]: {ex}")
-                            await send_text(preview_caption, "Đã báo bàn cược")
-                    else:
-                        await send_text(preview_caption, "Đã báo bàn cược")
+                # Gửi tin chuẩn bị vào lệnh (không capture bàn)
+                intro_text = self.config.get('send_intro_text', 'CHUẨN BỊ VÀO LỆNH NÀO AE 💸')
+                if intro_text:
+                    await send_text(intro_text, "Đã gửi tin chuẩn bị vào lệnh")
                     await asyncio.sleep(20)
 
                 # 2. Chờ 20s rồi phát lệnh hô Con/Cái
