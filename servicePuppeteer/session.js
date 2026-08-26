@@ -3684,7 +3684,6 @@ async function captureRoundIfReady(tableName, latestRound, winner, source) {
       `[SOCKET EVENT] ${source} ${currentInTable} Round #${latestRound?.id || "N/A"} winner=${w} → CAP`,
       logsNameProgress
     );
-    await helper.delay(250);
     const cap = await captureTableRound(currentInTable, {
       roundNum: latestRound?.id,
       resultWinner: w,
@@ -3741,27 +3740,17 @@ async function captureRoundIfReady(tableName, latestRound, winner, source) {
   return false;
 }
 
-socket.on("fe_result_visible", async (data) => {
-  let w = data?.resultWinner;
-  if (!["B", "P", "T"].includes(String(w || "").trim().toUpperCase())) {
-    await helper.delay(1200);
-    w = data?.resultWinner || data?.latestRound?.roadFormat;
-  }
-  await captureRoundIfReady(
-    data?.tableName,
-    data?.latestRound,
-    w,
-    "GP_WINNER"
-  );
-});
-
+// DUY NHẤT SỰ KIỆN NÀY: Chụp ngay khi API vừa cập nhật điểm và cửa thắng B/P/T vào lịch sử BigRoad
 socket.on("new_round_completed", async (data) => {
-  await captureRoundIfReady(
-    data?.tableName,
-    data?.latestRound,
-    data?.resultWinner || data?.latestRound?.roadFormat,
-    "BPT"
-  );
+  const winner = String(data?.resultWinner || data?.latestRound?.roadFormat || "").trim().toUpperCase();
+  if (winner === "B" || winner === "P" || winner === "T") {
+    await captureRoundIfReady(
+      data?.tableName,
+      data?.latestRound,
+      winner,
+      "NEW_ROUND_BPT"
+    );
+  }
 });
 
 async function runPlaceBetCommand(betSide, betAmount) {

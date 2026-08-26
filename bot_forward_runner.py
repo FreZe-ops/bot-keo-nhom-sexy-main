@@ -220,8 +220,7 @@ def get_api_headers():
 
 async def get_healthy_active_sessions():
     """
-    Quét toàn bộ các session cào (NS1..NS4) để tìm các bàn đang chạy mượt,
-    không bị treo, không bị paused, và có ảnh chụp mới nhất (< 120s).
+    Quét toàn bộ các session cào (NS1..NS4) để tìm các bàn đang active trên Playwright.
     """
     healthy = []
     loop = asyncio.get_event_loop()
@@ -238,23 +237,11 @@ async def get_healthy_active_sessions():
                     table = str(data.get('activeTable') or '').upper().strip()
                     
                     if table and table not in ('NONE', 'LOBBY') and not paused:
-                        # Kiểm tra ảnh chụp bàn mới nhất
-                        shot_url = f"{API_BASE_URL.rstrip('/')}/api/latest-screenshot?tableName={urllib.parse.quote(table)}"
-                        shot_req = urllib.request.Request(shot_url, headers=get_api_headers())
-                        with urllib.request.urlopen(shot_req, timeout=2.5) as sr:
-                            sdata = json.loads(sr.read().decode('utf-8'))
-                            if sdata.get('success') and sdata.get('data'):
-                                sinfo = sdata['data']
-                                stamp = int(sinfo.get('stampTime') or 0)
-                                age_s = ((time.time() * 1000) - stamp) / 1000.0 if stamp else 9999
-                                filepath = sinfo.get('filepath')
-                                # Nếu ảnh mới trong vòng 150s và là file thật -> Session khỏe mạnh
-                                if age_s < 150 and is_real_screenshot_file(filepath):
-                                    res_list.append({
-                                        'name_service': ns,
-                                        'table': table,
-                                        'age_s': age_s
-                                    })
+                        res_list.append({
+                            'name_service': ns,
+                            'table': table,
+                            'age_s': 0
+                        })
             except Exception:
                 pass
         return res_list
@@ -265,38 +252,31 @@ async def get_healthy_active_sessions():
         log(f"[WARN] Lỗi kiểm tra session health: {e}")
     return healthy
 
-BOT_INDEX_MAP = {
-    'bot_forward_1': 0,
-    'bot_forward_2': 1,
-    'bot_forward_3': 2
+BOT_PREFERRED_SESSIONS = {
+    'bot_forward_1': ['NS1', 'NS4', 'NS2', 'NS3'],
+    'bot_forward_2': ['NS2', 'NS4', 'NS1', 'NS3'],
+    'bot_forward_3': ['NS3', 'NS4', 'NS1', 'NS2'],
 }
-GLOBAL_ROUND_ROBIN_OFFSET = 0
 GLOBAL_BOT_TABLE_CLAIMS = {}
 GLOBAL_CLAIM_LOCK = asyncio.Lock()
 
 async def select_next_healthy_session(bot_id, previous_table=None, preferred_sessions=None, bot_name=""):
     """
-    Phân bổ Session theo cơ chế Round-Robin cho 3 Bot thật và 4 Session (NS1, NS2, NS3, NS4).
-    Đảm bảo 3 Bot luôn được phân vào 3 Session và 3 Bàn khác nhau 100%, không bao giờ đụng bàn.
+    Phân bổ Session cho 3 Bot thật qua 4 Session (NS1, NS2, NS3, NS4).
+    Đảm bảo 3 Bot luôn luôn vào 3 Bàn khác nhau 100%, tuyệt đối không trùng bàn!
     """
-    global GLOBAL_ROUND_ROBIN_OFFSET
     async with GLOBAL_CLAIM_LOCK:
         healthy = await get_healthy_active_sessions()
         ns_map = {h['name_service']: h for h in healthy}
-        available_ns = ['NS1', 'NS2', 'NS3', 'NS4']
         
         # Danh sách các bàn đang bị bot khác sử dụng / khóa
         claimed_tables = {str(t).upper().strip() for b_id, t in GLOBAL_BOT_TABLE_CLAIMS.items() if b_id != bot_id and t}
         
-        bot_idx = BOT_INDEX_MAP.get(bot_id, 0)
-        # Thứ tự ưu tiên theo Round-Robin
-        target_ns_order = [
-            available_ns[(GLOBAL_ROUND_ROBIN_OFFSET + bot_idx + offset) % 4]
-            for offset in range(4)
-        ]
+        # Thứ tự ưu tiên riêng biệt cho từng bot để không đụng nhau
+        pref_list = BOT_PREFERRED_SESSIONS.get(bot_id, ['NS1', 'NS2', 'NS3', 'NS4'])
         
         chosen = None
-        for ns in target_ns_order:
+        for ns in pref_list:
             if ns in ns_map:
                 cand = ns_map[ns]
                 if cand['table'] not in claimed_tables:
@@ -308,16 +288,19 @@ async def select_next_healthy_session(bot_id, previous_table=None, preferred_ses
             chosen = unclaimed[0] if unclaimed else healthy[0]
             
         if not chosen:
-            fallback_ns = "NS1" if bot_id == "bot_forward_1" else ("NS2" if bot_id == "bot_forward_2" else "NS3")
-            fallback_table = "C01" if bot_id == "bot_forward_1" else ("C02" if bot_id == "bot_forward_2" else "C05")
+            fallback_map = {
+                'bot_forward_1': ('NS1', 'C01'),
+                'bot_forward_2': ('NS2', 'C02'),
+                'bot_forward_3': ('NS3', 'C05')
+            }
+            fallback_ns, fallback_table = fallback_map.get(bot_id, ('NS4', 'C08'))
             GLOBAL_BOT_TABLE_CLAIMS[bot_id] = fallback_table
             log(f"[{bot_name}] Fallback về Bàn {fallback_table} ({fallback_ns})")
             return fallback_ns, fallback_table
 
         GLOBAL_BOT_TABLE_CLAIMS[bot_id] = chosen['table']
-        GLOBAL_ROUND_ROBIN_OFFSET = (GLOBAL_ROUND_ROBIN_OFFSET + 1) % 4
         
-        log(f"[{bot_name or bot_id}] [ROUND-ROBIN ASSIGNED] Đã phân bổ Session {chosen['name_service']} - Bàn {chosen['table']} (Khỏe mạnh, ảnh mới cách {chosen['age_s']:.1f}s | Bàn bot khác đang chạy: {list(claimed_tables)})")
+        log(f"[{bot_name or bot_id}] [SESSION ASSIGNED] Đã phân bổ Session {chosen['name_service']} - Bàn {chosen['table']} (Bàn bot khác đang chạy: {list(claimed_tables)})")
         return chosen['name_service'], chosen['table']
 
 async def get_live_table_prediction(table_name="C01", name_service="NS1"):
