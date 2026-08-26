@@ -122,7 +122,7 @@ def extract_winner_from_filename(filepath):
         return "T"
     return None
 
-def get_latest_local_screenshot_for_table(table_name="C01"):
+def get_latest_local_screenshot_for_table(table_name="C01", min_stamp_ms=None, exclude_file=None):
     search_dirs = [
         os.path.join(ROOT_DIR, 'public', 'screenshots'),
         os.path.join(ROOT_DIR, 'screenshots'),
@@ -130,6 +130,8 @@ def get_latest_local_screenshot_for_table(table_name="C01"):
         os.path.join(ROOT_DIR, 'images'),
     ]
     tbl_norm = table_name.lower()
+    min_mtime = (min_stamp_ms / 1000.0) if min_stamp_ms else 0
+
     for sdir in search_dirs:
         if not os.path.exists(sdir):
             continue
@@ -146,6 +148,10 @@ def get_latest_local_screenshot_for_table(table_name="C01"):
             target_list.sort(key=lambda x: os.path.getmtime(x), reverse=True)
             for f in target_list:
                 if is_real_screenshot_file(f) and extract_winner_from_filename(f):
+                    if exclude_file and os.path.abspath(f) == os.path.abspath(exclude_file):
+                        continue
+                    if min_mtime > 0 and os.path.getmtime(f) < (min_mtime - 3):
+                        continue
                     return f
         except Exception:
             pass
@@ -354,18 +360,19 @@ def normalize_side(val):
         return 'T'
     return None
 
-async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", min_stamp_ms=None, initial_round_count=0, initial_round_id=0, max_wait_s=75):
+async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", min_stamp_ms=None, initial_round_count=0, initial_round_id=0, exclude_shot=None, max_wait_s=75):
     """
     Chờ kết quả ván thật từ bàn và lấy ảnh chụp thật vừa hoàn thành của ĐÚNG ván đó.
     QUY TẮC ĐỐI CHIẾU CHUẨN XÁC:
     1. Kiểm tra trực tiếp API Database bàn cược (/predict/get-table-by-name) xem đã có ván mới kết thúc chưa (id > initial_round_id).
     2. Khi DB đã có ván mới, lấy chính xác kết quả roadFormat (B/P/T) thực tế của ván đó.
-    3. Đồng thời lấy ảnh chụp thật có tag kết quả tương ứng để gửi lên nhóm.
+    3. Đồng thời lấy ảnh chụp thật có tag kết quả tương ứng và TUYỆT ĐỐI KHÔNG DÙNG LẠI ẢNH BÁO BÀN.
     """
     start_time = time.time()
     q = urllib.parse.quote(str(table_name).strip().upper())
     predict_url = f"{API_BASE_URL.rstrip('/')}/predict/get-table-by-name?tableName={q}"
     shot_url = f"{API_BASE_URL.rstrip('/')}/api/latest-screenshot?tableName={q}"
+    min_valid_stamp = min_stamp_ms or int(time.time() * 1000)
     
     db_winner = None
     db_round_id = None
@@ -406,24 +413,33 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
                 stamp = int(shot_data.get('stampTime') or 0)
                 
                 if filepath and os.path.exists(filepath) and is_real_screenshot_file(filepath):
-                    file_win = extract_winner_from_filename(filepath)
-                    norm_win = normalize_side(raw_winner) or file_win
-                    
-                    if db_winner:
-                        if shot_round == db_round_id or file_win == db_winner or stamp >= (min_stamp_ms or 0):
-                            log(f"[MATCH SHOT] Đã khớp ảnh chụp thật ván #{db_round_id}: {os.path.basename(filepath)} | Kết quả: {db_winner}")
-                            return filepath, db_winner
-                    elif norm_win in ('B', 'P', 'T') and file_win and stamp >= ((min_stamp_ms or 0) + 15000):
-                        log(f"[WAIT RESULT] Đã nhận ảnh chụp thật ván vừa cược bàn {table_name}: {os.path.basename(filepath)} | Kết quả mở: {norm_win}")
-                        return filepath, norm_win
+                    # Loại trừ tuyệt đối ảnh báo bàn cũ
+                    if exclude_shot and os.path.abspath(filepath) == os.path.abspath(exclude_shot):
+                        pass
+                    else:
+                        file_win = extract_winner_from_filename(filepath)
+                        norm_win = normalize_side(raw_winner) or file_win
+                        
+                        # Ảnh phải có mốc thời gian sau lúc hô lệnh hoặc trùng mã ván mới
+                        is_truly_new = (stamp >= (min_valid_stamp - 3000)) or (db_round_id and shot_round >= db_round_id)
+                        if is_truly_new and norm_win in ('B', 'P', 'T') and file_win:
+                            if db_winner:
+                                if shot_round == db_round_id or file_win == db_winner or stamp >= min_valid_stamp:
+                                    log(f"[MATCH SHOT] Đã khớp ảnh chụp thật ván #{db_round_id}: {os.path.basename(filepath)} | Kết quả: {db_winner}")
+                                    return filepath, db_winner
+                            else:
+                                db_winner = norm_win
+                                log(f"[WAIT RESULT] Đã nhận ảnh chụp thật ván vừa cược bàn {table_name}: {os.path.basename(filepath)} | Kết quả mở: {norm_win}")
+                                return filepath, norm_win
 
-            # Nếu DB đã có kết quả nhưng ảnh API chưa kịp cập nhật, tìm ảnh cục bộ
-            if db_winner and (time.time() - start_time > 22):
-                local_shot = get_latest_local_screenshot_for_table(table_name)
+            # Nếu DB đã có kết quả nhưng API chưa có ảnh mới, tìm ảnh cục bộ chụp sau min_valid_stamp
+            if db_winner and (time.time() - start_time > 20):
+                local_shot = get_latest_local_screenshot_for_table(table_name, min_stamp_ms=min_valid_stamp, exclude_file=exclude_shot)
                 if local_shot:
                     return local_shot, db_winner
                 if time.time() - start_time > 35:
-                    return None, db_winner
+                    res_type = "wincai" if db_winner == 'B' else ("wincon" if db_winner == 'P' else "tie")
+                    return get_fallback_image(res_type), db_winner
 
         except Exception:
             pass
@@ -431,13 +447,14 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
 
     # Nếu hết max_wait_s:
     if db_winner:
-        local_shot = get_latest_local_screenshot_for_table(table_name)
-        return local_shot, db_winner
+        local_shot = get_latest_local_screenshot_for_table(table_name, min_stamp_ms=min_valid_stamp, exclude_file=exclude_shot)
+        if local_shot:
+            return local_shot, db_winner
+        res_type = "wincai" if db_winner == 'B' else ("wincon" if db_winner == 'P' else "tie")
+        return get_fallback_image(res_type), db_winner
 
-    # Fallback an toàn
-    local_shot = get_latest_local_screenshot_for_table(table_name)
-    local_winner = extract_winner_from_filename(local_shot) if local_shot else bet_side
-    return local_shot, (local_winner or bet_side)
+    res_type = "wincai" if bet_side == 'B' else ("wincon" if bet_side == 'P' else "tie")
+    return get_fallback_image(res_type), bet_side
 
 def get_fallback_image(result_type):
     target_dir = RESULT_IMAGE_DIRS.get(result_type, 'images/wincai')
@@ -744,6 +761,7 @@ class TelegramForwardBot:
                 await asyncio.sleep(20)
 
             # Gửi ảnh chụp bàn hiện tại KÈM CAPTION báo bàn cược
+            preview_shot = None
             if self.config.get('send_table_preview'):
                 preview_shot = get_latest_local_screenshot_for_table(self.session_table)
                 caption_template = self.config.get('send_table_preview_caption', '🎲 BÀN CƯỢC: BACCARAT {table} | CHUẨN BỊ VÀO LỆNH NÀO AE 💸')
@@ -796,13 +814,14 @@ class TelegramForwardBot:
                 min_stamp_ms=bet_time_ms,
                 initial_round_count=initial_round_count,
                 initial_round_id=initial_round_id,
+                exclude_shot=preview_shot,
                 max_wait_s=65
             )
             resolved_shot = resolve_screenshot_path(real_screenshot)
-            if not resolved_shot:
-                resolved_shot = get_latest_local_screenshot_for_table(self.session_table)
-            if not resolved_shot:
-                res_type = "wincai" if bet_side == 'B' else "wincon"
+            if not resolved_shot or (preview_shot and os.path.abspath(resolved_shot) == os.path.abspath(preview_shot)):
+                resolved_shot = get_latest_local_screenshot_for_table(self.session_table, min_stamp_ms=bet_time_ms, exclude_file=preview_shot)
+            if not resolved_shot or (preview_shot and os.path.abspath(resolved_shot) == os.path.abspath(preview_shot)):
+                res_type = "wincai" if raw_winner == 'B' else ("wincon" if raw_winner == 'P' else "tie")
                 resolved_shot = get_fallback_image(res_type)
 
             if resolved_shot and os.path.exists(resolved_shot):
