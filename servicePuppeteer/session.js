@@ -3658,10 +3658,11 @@ async function captureRoundIfReady(tableName, latestRound, winner, source) {
   }
   lastResultEventAt = Date.now();
   lastSessionProgressAt = lastResultEventAt;
-  const captureKey = `${here}|${latestRound?.id || "?"}|${w}`;
-  if (lastRoundCaptureKey === captureKey && Date.now() - lastRoundCaptureAt < 60000) {
+  const roundId = latestRound?.id != null ? String(latestRound.id) : null;
+  const captureKey = roundId ? `${here}|R${roundId}` : `${here}|${w}|${Date.now()}`;
+  if (roundId && lastRoundCaptureKey === captureKey) {
     console.log(
-      `[SOCKET EVENT] skip cap ${currentInTable} winner=${w} — vừa chụp ${source}`
+      `[SOCKET EVENT] skip cap ${currentInTable} round=${roundId} — vừa chụp ván này`
     );
     return false;
   }

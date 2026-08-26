@@ -319,6 +319,7 @@ async def get_live_table_prediction(table_name="C01", name_service="NS1"):
     Lấy kèo dự đoán thật và số lượng round hiện tại từ session / bàn cược đang chạy trên Playwright.
     """
     round_count = 0
+    latest_round_id = 0
     try:
         q = urllib.parse.quote(str(table_name).strip().upper())
         url = f"{API_BASE_URL.rstrip('/')}/predict/get-table-by-name?tableName={q}"
@@ -332,8 +333,9 @@ async def get_live_table_prediction(table_name="C01", name_service="NS1"):
         payload = res_data.get('data', res_data) if isinstance(res_data, dict) else {}
         
         rounds = payload.get('totalRound', [])
-        if isinstance(rounds, list):
+        if isinstance(rounds, list) and len(rounds) > 0:
             round_count = len(rounds)
+            latest_round_id = int(rounds[0].get('id') or 0)
         
         # Đọc tỷ lệ dự đoán Banker / Player
         pct = payload.get('percentCurrent', {})
@@ -341,15 +343,15 @@ async def get_live_table_prediction(table_name="C01", name_service="NS1"):
         player_pct = float(pct.get('player') or pct.get('P') or 50)
         
         if banker_pct > player_pct:
-            return 'B', '🔴 CÁI', round_count
+            return 'B', '🔴 CÁI', round_count, latest_round_id
         elif player_pct > banker_pct:
-            return 'P', '🔵 CON', round_count
+            return 'P', '🔵 CON', round_count, latest_round_id
     except Exception as e:
         log(f"[WARN] Lỗi lấy dự đoán live {table_name}: {e}. Dùng thuật toán cầu.")
 
     # Fallback tự chọn
     is_cai = random.choice([True, False])
-    return ('B', '🔴 CÁI', round_count) if is_cai else ('P', '🔵 CON', round_count)
+    return ('B', '🔴 CÁI', round_count, latest_round_id) if is_cai else ('P', '🔵 CON', round_count, latest_round_id)
 
 def normalize_side(val):
     if not val:
@@ -363,59 +365,85 @@ def normalize_side(val):
         return 'T'
     return None
 
-async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", min_stamp_ms=None, initial_round_count=0, max_wait_s=75):
+async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", min_stamp_ms=None, initial_round_count=0, initial_round_id=0, max_wait_s=75):
     """
-    Chờ kết quả ván thật từ bàn và lấy ảnh chụp thật vừa hoàn thành của ván đó.
-    QUY TẮC:
-    - 1 ván baccarat từ lúc đặt cược đến khi lật bài xong mất tối thiểu 25-50 giây.
-    - KHÔNG BAO GIỜ chấp nhận ảnh chụp trong vòng 18 giây đầu sau khi hô (vì đó là ảnh của ván trước).
-    - Chỉ chấp nhận ảnh có stampTime >= min_stamp_ms + 18000 HOẶC roundNum > initial_round_count.
+    Chờ kết quả ván thật từ bàn và lấy ảnh chụp thật vừa hoàn thành của ĐÚNG ván đó.
+    QUY TẮC ĐỐI CHIẾU CHUẨN XÁC:
+    1. Kiểm tra trực tiếp API Database bàn cược (/predict/get-table-by-name) xem đã có ván mới kết thúc chưa (id > initial_round_id).
+    2. Khi DB đã có ván mới, lấy chính xác kết quả roadFormat (B/P/T) thực tế của ván đó.
+    3. Đồng thời lấy ảnh chụp thật có tag kết quả tương ứng để gửi lên nhóm.
     """
     start_time = time.time()
-    url = f"{API_BASE_URL.rstrip('/')}/api/latest-screenshot?tableName={urllib.parse.quote(table_name)}"
+    q = urllib.parse.quote(str(table_name).strip().upper())
+    predict_url = f"{API_BASE_URL.rstrip('/')}/predict/get-table-by-name?tableName={q}"
+    shot_url = f"{API_BASE_URL.rstrip('/')}/api/latest-screenshot?tableName={q}"
     
-    last_known_shot = None
-    last_known_winner = None
-    min_valid_stamp = (min_stamp_ms + 18000) if min_stamp_ms else int(time.time() * 1000)
+    db_winner = None
+    db_round_id = None
 
     while time.time() - start_time < max_wait_s:
         try:
-            req = urllib.request.Request(url, headers=get_api_headers())
             loop = asyncio.get_event_loop()
-            res_text = await loop.run_in_executor(
+            
+            # 1. Kiểm tra Database bàn cược xem ván mới đã hoàn thành chưa
+            req_db = urllib.request.Request(predict_url, headers=get_api_headers())
+            res_db_text = await loop.run_in_executor(
                 None,
-                lambda: urllib.request.urlopen(req, timeout=3).read().decode('utf-8')
+                lambda: urllib.request.urlopen(req_db, timeout=3).read().decode('utf-8')
             )
-            res_data = json.loads(res_text)
-            if res_data.get('success') and res_data.get('data'):
-                shot_data = res_data['data']
+            res_db = json.loads(res_db_text)
+            rounds = res_db.get('totalRound', [])
+            if isinstance(rounds, list) and len(rounds) > 0:
+                latest_r = rounds[0]
+                cur_id = int(latest_r.get('id') or 0)
+                cur_winner = normalize_side(latest_r.get('roadFormat'))
+                if (cur_id > initial_round_id or len(rounds) > initial_round_count) and cur_winner in ('B', 'P', 'T'):
+                    db_winner = cur_winner
+                    db_round_id = cur_id
+                    log(f"[DB RESULT] Bàn {table_name} đã ghi nhận ván mới #{db_round_id} kết quả: {db_winner} (sau {time.time() - start_time:.1f}s)")
+
+            # 2. Kiểm tra API ảnh chụp mới nhất
+            req_shot = urllib.request.Request(shot_url, headers=get_api_headers())
+            res_shot_text = await loop.run_in_executor(
+                None,
+                lambda: urllib.request.urlopen(req_shot, timeout=3).read().decode('utf-8')
+            )
+            res_shot = json.loads(res_shot_text)
+            if res_shot.get('success') and res_shot.get('data'):
+                shot_data = res_shot['data']
                 filepath = shot_data.get('filepath')
-                stamp = int(shot_data.get('stampTime') or 0)
                 raw_winner = shot_data.get('resultWinner') or shot_data.get('winner')
                 shot_round = int(shot_data.get('roundNum') or 0)
+                stamp = int(shot_data.get('stampTime') or 0)
                 
                 if filepath and os.path.exists(filepath) and is_real_screenshot_file(filepath):
                     file_win = extract_winner_from_filename(filepath)
                     norm_win = normalize_side(raw_winner) or file_win
                     
-                    # CHỈ CHẤP NHẬN ẢNH CÓ KẾT QUẢ B/P/T RÕ RÀNG (KHÔNG CHỤP LÚC ĐANG ĐẾM GIÂY)
-                    if norm_win in ('B', 'P', 'T') and file_win:
-                        last_known_shot = filepath
-                        last_known_winner = norm_win
+                    if db_winner:
+                        if shot_round == db_round_id or file_win == db_winner or stamp >= (min_stamp_ms or 0):
+                            log(f"[MATCH SHOT] Đã khớp ảnh chụp thật ván #{db_round_id}: {os.path.basename(filepath)} | Kết quả: {db_winner}")
+                            return filepath, db_winner
+                    elif norm_win in ('B', 'P', 'T') and file_win and stamp >= ((min_stamp_ms or 0) + 15000):
+                        log(f"[WAIT RESULT] Đã nhận ảnh chụp thật ván vừa cược bàn {table_name}: {os.path.basename(filepath)} | Kết quả mở: {norm_win}")
+                        return filepath, norm_win
 
-                        # Đảm bảo đây là ván cược mới thật sự (sau ít nhất 18s từ lúc hô lệnh)
-                        is_new_round = (stamp >= min_valid_stamp)
-                        if is_new_round:
-                            log(f"[WAIT RESULT] Đã nhận ảnh chụp thật ván vừa cược bàn {table_name}: {os.path.basename(filepath)} | Kết quả mở: {norm_win} (sau {time.time() - start_time:.1f}s)")
-                            return filepath, norm_win
+            # Nếu DB đã có kết quả nhưng ảnh API chưa kịp cập nhật, tìm ảnh cục bộ
+            if db_winner and (time.time() - start_time > 22):
+                local_shot = get_latest_local_screenshot_for_table(table_name)
+                if local_shot:
+                    return local_shot, db_winner
+                if time.time() - start_time > 35:
+                    return None, db_winner
+
         except Exception:
             pass
         await asyncio.sleep(2)
 
     # Nếu hết max_wait_s:
-    if last_known_shot and last_known_winner:
-        log(f"[WARN] Ván cược bàn {table_name} chờ > {max_wait_s}s. Đồng bộ theo ảnh chụp gần nhất: {os.path.basename(last_known_shot)} | Kết quả: {last_known_winner}")
-        return last_known_shot, last_known_winner
+    if db_winner:
+        local_shot = get_latest_local_screenshot_for_table(table_name)
+        return local_shot, db_winner
 
     # Fallback an toàn
     local_shot = get_latest_local_screenshot_for_table(table_name)
@@ -743,7 +771,7 @@ class TelegramForwardBot:
             self.log(f"Chờ 20s trước khi lấy lệnh hô trực tiếp từ bàn {self.session_table} ({self.name_service})...")
             await asyncio.sleep(20)
 
-            bet_side, bet_text, initial_round_count = await get_live_table_prediction(self.session_table, self.name_service)
+            bet_side, bet_text, initial_round_count, initial_round_id = await get_live_table_prediction(self.session_table, self.name_service)
             bet_time_ms = int(time.time() * 1000)  # Ghi nhận mốc thời gian hô lệnh
 
             # Định dạng lệnh hô
@@ -767,10 +795,15 @@ class TelegramForwardBot:
             self.log(f"Đã hô lệnh ({bet_text_to_send}). Chờ cố định 20s cho ván bài bàn {self.session_table} chia và lật bài xong...")
             await asyncio.sleep(20)
 
-            # 4. Sau 20s: Lấy ẢNH THẬT và kết quả thực tế của ĐÚNG ván vừa cược xong
+            # 4. Sau 20s: Lấy ẢNH THẬT và kết quả thực tế của ĐÚNG ván vừa cược xong (Đối chiếu trực tiếp DB)
             self.log(f"Đang lấy ảnh kết quả thật vừa mở thưởng bàn {self.session_table}...")
             real_screenshot, raw_winner = await wait_for_table_screenshot_and_result(
-                self.session_table, bet_side, min_stamp_ms=bet_time_ms, max_wait_s=60
+                self.session_table,
+                bet_side,
+                min_stamp_ms=bet_time_ms,
+                initial_round_count=initial_round_count,
+                initial_round_id=initial_round_id,
+                max_wait_s=65
             )
             resolved_shot = resolve_screenshot_path(real_screenshot)
             if not resolved_shot:
