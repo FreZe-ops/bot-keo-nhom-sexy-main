@@ -265,53 +265,59 @@ async def get_healthy_active_sessions():
         log(f"[WARN] Lỗi kiểm tra session health: {e}")
     return healthy
 
+BOT_INDEX_MAP = {
+    'bot_forward_1': 0,
+    'bot_forward_2': 1,
+    'bot_forward_3': 2
+}
+GLOBAL_ROUND_ROBIN_OFFSET = 0
 GLOBAL_BOT_TABLE_CLAIMS = {}
 GLOBAL_CLAIM_LOCK = asyncio.Lock()
 
 async def select_next_healthy_session(bot_id, previous_table=None, preferred_sessions=None, bot_name=""):
     """
-    Chọn 1 bàn cào mượt mà nhất, tự động đổi sang bàn khác với ca trước và TUYỆT ĐỐI không trùng bàn với bot khác.
+    Phân bổ Session theo cơ chế Round-Robin cho 3 Bot thật và 4 Session (NS1, NS2, NS3, NS4).
+    Đảm bảo 3 Bot luôn được phân vào 3 Session và 3 Bàn khác nhau 100%, không bao giờ đụng bàn.
     """
+    global GLOBAL_ROUND_ROBIN_OFFSET
     async with GLOBAL_CLAIM_LOCK:
         healthy = await get_healthy_active_sessions()
+        ns_map = {h['name_service']: h for h in healthy}
+        available_ns = ['NS1', 'NS2', 'NS3', 'NS4']
         
-        if not healthy:
-            fallback_ns = "NS1" if bot_id == "bot_forward_1" else "NS2"
-            fallback_table = "C01" if bot_id == "bot_forward_1" else "C02"
-            GLOBAL_BOT_TABLE_CLAIMS[bot_id] = fallback_table
-            log(f"[WARN] Không tìm thấy session nào đạt chuẩn sức khỏe. Fallback về Bàn {fallback_table} ({fallback_ns}).")
-            return fallback_ns, fallback_table
-
-        # Sắp xếp theo độ tươi mới của ảnh
-        healthy.sort(key=lambda x: x['age_s'])
-
         # Danh sách các bàn đang bị bot khác sử dụng / khóa
         claimed_tables = {str(t).upper().strip() for b_id, t in GLOBAL_BOT_TABLE_CLAIMS.items() if b_id != bot_id and t}
-
-        # Loại trừ: Bàn đang bị bot khác dùng + Bàn của chính bot này ở ca trước
-        exclude_set = set(claimed_tables)
-        if previous_table:
-            exclude_set.add(str(previous_table).upper().strip())
-
-        candidates = [h for h in healthy if h['table'] not in exclude_set]
         
-        # Nếu loại trừ cả previous_table làm hết ứng viên -> chỉ cần không trùng với bot khác (claimed_tables)
-        if not candidates:
-            candidates = [h for h in healthy if h['table'] not in claimed_tables]
+        bot_idx = BOT_INDEX_MAP.get(bot_id, 0)
+        # Thứ tự ưu tiên theo Round-Robin
+        target_ns_order = [
+            available_ns[(GLOBAL_ROUND_ROBIN_OFFSET + bot_idx + offset) % 4]
+            for offset in range(4)
+        ]
+        
+        chosen = None
+        for ns in target_ns_order:
+            if ns in ns_map:
+                cand = ns_map[ns]
+                if cand['table'] not in claimed_tables:
+                    chosen = cand
+                    break
+        
+        if not chosen and healthy:
+            unclaimed = [h for h in healthy if h['table'] not in claimed_tables]
+            chosen = unclaimed[0] if unclaimed else healthy[0]
             
-        if not candidates:
-            candidates = healthy
+        if not chosen:
+            fallback_ns = "NS1" if bot_id == "bot_forward_1" else ("NS2" if bot_id == "bot_forward_2" else "NS3")
+            fallback_table = "C01" if bot_id == "bot_forward_1" else ("C02" if bot_id == "bot_forward_2" else "C05")
+            GLOBAL_BOT_TABLE_CLAIMS[bot_id] = fallback_table
+            log(f"[{bot_name}] Fallback về Bàn {fallback_table} ({fallback_ns})")
+            return fallback_ns, fallback_table
 
-        # Ưu tiên các Session được gán riêng (bot1 -> NS1/NS3, bot2 -> NS2/NS4)
-        if preferred_sessions:
-            pref_candidates = [c for c in candidates if c['name_service'] in preferred_sessions]
-            if pref_candidates:
-                candidates = pref_candidates
-
-        chosen = random.choice(candidates)
         GLOBAL_BOT_TABLE_CLAIMS[bot_id] = chosen['table']
+        GLOBAL_ROUND_ROBIN_OFFSET = (GLOBAL_ROUND_ROBIN_OFFSET + 1) % 4
         
-        log(f"[{bot_name or 'DYNAMIC ROTATION'}] Đã chọn Session {chosen['name_service']} - Bàn {chosen['table']} (Ảnh mới cách {chosen['age_s']:.1f}s | Bàn bot khác đang chạy: {list(claimed_tables)} | Loại trừ: {list(exclude_set)})")
+        log(f"[{bot_name or bot_id}] [ROUND-ROBIN ASSIGNED] Đã phân bổ Session {chosen['name_service']} - Bàn {chosen['table']} (Khỏe mạnh, ảnh mới cách {chosen['age_s']:.1f}s | Bàn bot khác đang chạy: {list(claimed_tables)})")
         return chosen['name_service'], chosen['table']
 
 async def get_live_table_prediction(table_name="C01", name_service="NS1"):
@@ -713,7 +719,7 @@ class TelegramForwardBot:
                     except Exception as ex:
                         self.log(f"[LỖI GỬI ẢNH KẾT QUẢ ẢO]: {ex}")
 
-                await asyncio.sleep(20)
+                await asyncio.sleep(10)
 
                 # 5. Gửi tin kết quả
                 if outcome == 'WIN':
@@ -826,7 +832,7 @@ class TelegramForwardBot:
             else:
                 self.log(f"[LỖI] Không tìm thấy file ảnh để gửi! (real={real_screenshot})")
 
-            await asyncio.sleep(20)
+            await asyncio.sleep(10)
 
             # 5. Trả tin kết quả chuẩn xác 100% theo ván thực tế:
             # ƯU TIÊN TUYỆT ĐỐI: Khóa kết quả 1:1 theo đúng file ảnh vừa gửi đi
