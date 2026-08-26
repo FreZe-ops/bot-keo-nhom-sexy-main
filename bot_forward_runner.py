@@ -614,6 +614,10 @@ class TelegramForwardBot:
             self.log("[ERROR] Chưa cấu hình group_id cho tài khoản này.")
             return
 
+        if self.is_running_round:
+            self.log("[BUSY] Đang trong ca chạy dở, bỏ qua lệnh gọi trùng lặp!")
+            return
+
         entity = await self.resolve_entity(self.group_id)
         if not entity:
             self.log(f"[ERROR] Không tìm thấy nhóm ID={self.group_id}")
@@ -909,41 +913,45 @@ async def run_single_bot_schedule(bot, all_bots):
         if time_str in slots_set:
             slot_key = now.strftime('%Y-%m-%d %H:%M')
             if slot_key not in sent_slots:
-                bot.log(f"Bắt đầu ca {slot_key}...")
-                sent_slots.add(slot_key)
-                try:
-                    source_entity = await bot.resolve_entity(bot.source_username)
-                    if not source_entity:
-                        bot.log(f"[ERROR] Không tìm thấy nguồn @{bot.source_username}")
-                    else:
-                        messages = []
-                        async for m in bot.client.iter_messages(source_entity, limit=20):
-                            messages.append(m)
-                        messages.sort(key=lambda x: x.id)
-                        
-                        if len(messages) < 5:
-                            bot.log(f"[WARN] Nguồn @{bot.source_username} chưa đủ 5 tin.")
+                if bot.is_running_round:
+                    bot.log(f"[BUSY] Bot đang chạy ca trước, bỏ qua slot {slot_key} để tránh gửi lặp tin.")
+                    sent_slots.add(slot_key)
+                else:
+                    bot.log(f"Bắt đầu ca {slot_key}...")
+                    sent_slots.add(slot_key)
+                    try:
+                        source_entity = await bot.resolve_entity(bot.source_username)
+                        if not source_entity:
+                            bot.log(f"[ERROR] Không tìm thấy nguồn @{bot.source_username}")
                         else:
-                            # Lấy danh sách các bàn mà các bot khác đang sử dụng
-                            other_tables = [
-                                b.session_table for b in all_bots 
-                                if b != bot and b.is_running_round and b.session_table
-                            ]
-                            await bot.execute_round(messages, exclude_tables=other_tables)
-                except Exception as e:
-                    bot.log(f"[LỖI TRONG CA]: {e}")
+                            messages = []
+                            async for m in bot.client.iter_messages(source_entity, limit=20):
+                                messages.append(m)
+                            messages.sort(key=lambda x: x.id)
+                            
+                            if len(messages) < 5:
+                                bot.log(f"[WARN] Nguồn @{bot.source_username} chưa đủ 5 tin.")
+                            else:
+                                # Lấy danh sách các bàn mà các bot khác đang sử dụng
+                                other_tables = [
+                                    b.session_table for b in all_bots 
+                                    if b != bot and b.is_running_round and b.session_table
+                                ]
+                                await bot.execute_round(messages, exclude_tables=other_tables)
+                    except Exception as e:
+                        bot.log(f"[LỖI TRONG CA]: {e}")
 
         if now.hour == 0 and now.minute == 1:
             sent_slots = set()
 
-        await asyncio.sleep(60 - now.second)
+        await asyncio.sleep(max(1, 60 - now.second))
 
 async def main():
     parser = argparse.ArgumentParser(description="Multi-Account Telegram Forward Runner")
     parser.add_argument('--account', type=str, help="ID của tài khoản cần chạy (ví dụ bot_forward_1)")
     parser.add_argument('--login', type=str, help="Đăng nhập OTP cho tài khoản cụ thể (ví dụ bot_forward_1 hoặc bot_forward_2)")
     parser.add_argument('--all', action='store_true', help="Chạy toàn bộ tài khoản trong config song song")
-    parser.add_argument('--run-now', action='store_true', default=True, help="Chạy ngay 1 ca test khi khởi động")
+    parser.add_argument('--run-now', action='store_true', default=False, help="Chạy ngay 1 ca test khi khởi động")
     args = parser.parse_args()
 
     accounts = load_accounts_config()
