@@ -126,8 +126,6 @@ def get_latest_local_screenshot_for_table(table_name="C01", min_stamp_ms=None, e
     search_dirs = [
         os.path.join(ROOT_DIR, 'public', 'screenshots'),
         os.path.join(ROOT_DIR, 'screenshots'),
-        os.path.join(ROOT_DIR, 'images', 'sexy'),
-        os.path.join(ROOT_DIR, 'images'),
     ]
     tbl_norm = table_name.lower()
     min_mtime = (min_stamp_ms / 1000.0) if min_stamp_ms else 0
@@ -139,7 +137,7 @@ def get_latest_local_screenshot_for_table(table_name="C01", min_stamp_ms=None, e
             files = [
                 os.path.join(sdir, f)
                 for f in os.listdir(sdir)
-                if f.lower().endswith(IMAGE_EXTENSIONS) and not f.startswith('.')
+                if f.lower().startswith('sexy_') and f.lower().endswith(IMAGE_EXTENSIONS) and not f.startswith('.')
             ]
             if not files:
                 continue
@@ -155,6 +153,68 @@ def get_latest_local_screenshot_for_table(table_name="C01", min_stamp_ms=None, e
                     return f
         except Exception:
             pass
+    return None
+
+def get_real_screenshot_by_winner(table_name="C01", winner="B", exclude_file=None):
+    """
+    Tìm ảnh chụp THẬT từ Playwright trong public/screenshots khớp với bàn table_name và kết quả winner ('B'/'P'/'T').
+    TUYỆT ĐỐI chỉ lấy ảnh thật bắt đầu bằng sexy_, không bao giờ lấy ảnh ảo!
+    """
+    search_dirs = [
+        os.path.join(ROOT_DIR, 'public', 'screenshots'),
+        os.path.join(ROOT_DIR, 'screenshots'),
+    ]
+    tbl_norm = table_name.lower()
+    norm_win = normalize_side(winner)
+    win_tag = "_wb" if norm_win == 'B' else ("_wp" if norm_win == 'P' else "_wt")
+
+    candidates = []
+    for sdir in search_dirs:
+        if not os.path.exists(sdir):
+            continue
+        try:
+            files = [
+                os.path.join(sdir, f)
+                for f in os.listdir(sdir)
+                if f.lower().startswith('sexy_') and f.lower().endswith(IMAGE_EXTENSIONS)
+            ]
+            for f in files:
+                if exclude_file and os.path.abspath(f) == os.path.abspath(exclude_file):
+                    continue
+                fname = os.path.basename(f).lower()
+                if (f"_{tbl_norm}_" in fname or f"{tbl_norm}_" in fname) and win_tag in fname:
+                    candidates.append((os.path.getmtime(f), f))
+        except Exception:
+            pass
+
+    if candidates:
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        return candidates[0][1]
+
+    # Nếu không có ảnh đúng bàn đó có winner đó, lấy ảnh thật của bàn khác bất kỳ có đúng winner đó
+    fallback_candidates = []
+    for sdir in search_dirs:
+        if not os.path.exists(sdir):
+            continue
+        try:
+            files = [
+                os.path.join(sdir, f)
+                for f in os.listdir(sdir)
+                if f.lower().startswith('sexy_') and f.lower().endswith(IMAGE_EXTENSIONS)
+            ]
+            for f in files:
+                if exclude_file and os.path.abspath(f) == os.path.abspath(exclude_file):
+                    continue
+                fname = os.path.basename(f).lower()
+                if win_tag in fname:
+                    fallback_candidates.append((os.path.getmtime(f), f))
+        except Exception:
+            pass
+
+    if fallback_candidates:
+        fallback_candidates.sort(key=lambda x: x[0], reverse=True)
+        return fallback_candidates[0][1]
+
     return None
 
 def get_any_table_preview_screenshot():
@@ -432,14 +492,15 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
                                 log(f"[WAIT RESULT] Đã nhận ảnh chụp thật ván vừa cược bàn {table_name}: {os.path.basename(filepath)} | Kết quả mở: {norm_win}")
                                 return filepath, norm_win
 
-            # Nếu DB đã có kết quả nhưng API chưa có ảnh mới, tìm ảnh cục bộ chụp sau min_valid_stamp
-            if db_winner and (time.time() - start_time > 20):
+            # Nếu DB đã có kết quả nhưng API chưa có ảnh mới, tìm ảnh chụp thật cục bộ
+            if db_winner and (time.time() - start_time > 15):
                 local_shot = get_latest_local_screenshot_for_table(table_name, min_stamp_ms=min_valid_stamp, exclude_file=exclude_shot)
                 if local_shot:
                     return local_shot, db_winner
-                if time.time() - start_time > 35:
-                    res_type = "wincai" if db_winner == 'B' else ("wincon" if db_winner == 'P' else "tie")
-                    return get_fallback_image(res_type), db_winner
+                if time.time() - start_time > 30:
+                    real_match = get_real_screenshot_by_winner(table_name, db_winner, exclude_file=exclude_shot)
+                    if real_match:
+                        return real_match, db_winner
 
         except Exception:
             pass
@@ -450,11 +511,12 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
         local_shot = get_latest_local_screenshot_for_table(table_name, min_stamp_ms=min_valid_stamp, exclude_file=exclude_shot)
         if local_shot:
             return local_shot, db_winner
-        res_type = "wincai" if db_winner == 'B' else ("wincon" if db_winner == 'P' else "tie")
-        return get_fallback_image(res_type), db_winner
+        real_match = get_real_screenshot_by_winner(table_name, db_winner, exclude_file=exclude_shot)
+        if real_match:
+            return real_match, db_winner
 
-    res_type = "wincai" if bet_side == 'B' else ("wincon" if bet_side == 'P' else "tie")
-    return get_fallback_image(res_type), bet_side
+    real_match = get_real_screenshot_by_winner(table_name, bet_side, exclude_file=exclude_shot)
+    return real_match, bet_side
 
 def get_fallback_image(result_type):
     target_dir = RESULT_IMAGE_DIRS.get(result_type, 'images/wincai')
@@ -821,8 +883,7 @@ class TelegramForwardBot:
             if not resolved_shot or (preview_shot and os.path.abspath(resolved_shot) == os.path.abspath(preview_shot)):
                 resolved_shot = get_latest_local_screenshot_for_table(self.session_table, min_stamp_ms=bet_time_ms, exclude_file=preview_shot)
             if not resolved_shot or (preview_shot and os.path.abspath(resolved_shot) == os.path.abspath(preview_shot)):
-                res_type = "wincai" if raw_winner == 'B' else ("wincon" if raw_winner == 'P' else "tie")
-                resolved_shot = get_fallback_image(res_type)
+                resolved_shot = get_real_screenshot_by_winner(self.session_table, raw_winner, exclude_file=preview_shot)
 
             if resolved_shot and os.path.exists(resolved_shot):
                 try:
