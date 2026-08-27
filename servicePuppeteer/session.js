@@ -1750,8 +1750,8 @@ async function handleInTableSignalLost() {
     return false;
   }
 
-  // Cho phép click lại sau mỗi 4 giây nếu màn hình vẫn còn báo mất tín hiệu
-  if (Date.now() - lastSignalReloadAt < 4000) {
+  // Cho phép click lại sau mỗi 3 giây nếu màn hình vẫn còn báo mất tín hiệu
+  if (Date.now() - lastSignalReloadAt < 3000) {
     return true;
   }
 
@@ -1759,7 +1759,7 @@ async function handleInTableSignalLost() {
   signalReloadAttempts += 1;
 
   console.log(
-    `[SIGNAL] Phát hiện 'Tín hiệu bị mất ... Vui lòng làm mới' (lần ${signalReloadAttempts}/4) — Đang click nút Làm Mới từ DOM...`
+    `[SIGNAL] Phát hiện 'Tín hiệu bị mất ... Vui lòng làm mới' (lần ${signalReloadAttempts}) — Đang click nút Làm Mới từ DOM...`
   );
   await helper.appendToLog(
     `🔄 [SIGNAL] Tín hiệu bị mất — click làm mới lần ${signalReloadAttempts}`,
@@ -1771,32 +1771,16 @@ async function handleInTableSignalLost() {
     ok ? "✅ [SIGNAL] Đã click làm mới DOM thành công!" : "⚠️ [SIGNAL] Đang tìm và click lại nút làm mới..."
   );
 
-  // Nếu đã click 4 lần (16s) mà stream vẫn không hồi phục: Tự động thoát ra sảnh và vào lại bàn cược
-  if (signalReloadAttempts >= 4 && !signalReentering) {
-    signalReentering = true;
-    signalReloadAttempts = 0;
-    console.warn(
-      "[SIGNAL] Đã click làm mới 4 lần chưa hết — tự động về sảnh vào lại bàn để kết nối lại video..."
-    );
-    setTimeout(async () => {
-      try {
-        await goHomeToLobby();
-        const hall = await resolveGameHallFrame().catch(() => null);
-        if (hall) gameHallFrame = hall;
-        const entered = await enterTargetTable(gameHallFrame || seamlessFrame || page);
-        if (!entered?.success) {
-          throw new Error(entered?.reason || "signal_reenter_failed");
-        }
-      } catch (error) {
-        console.error("[SIGNAL RE-ENTER]", error.message);
-        lastSessionProgressAt = 0;
-      } finally {
-        signalReentering = false;
-      }
-    }, 300);
-  }
   return true;
 }
+
+// Tự động bấm [🔄 Làm mới / Reload] định kỳ mỗi 3 phút để video stream luôn mượt mà và không bao giờ bị mất tín hiệu
+setInterval(async () => {
+  if (sessionInTableReady && currentInTable && currentInTable !== "NONE" && page && !page.isClosed()) {
+    console.log(`🔄 [AUTO RELOAD STREAM] Định kỳ 3 phút tự động bấm Reload bàn ${currentInTable}...`);
+    await clickSignalLostReload().catch(() => {});
+  }
+}, 180000);
 
 async function detectFatalUiError() {
   if (!page || page.isClosed()) return "PAGE_CLOSED";
