@@ -2919,4 +2919,12 @@ async def main():
         release_lock()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    while True:
+        try:
+            asyncio.run(main())
+        except KeyboardInterrupt:
+            log("Bot đã dừng thủ công.")
+            break
+        except Exception as ex:
+            log(f"[FATAL RESTART] Bot gặp lỗi: {ex} -> Tự động khởi động lại sau 3s...")
+            time.sleep(3)
