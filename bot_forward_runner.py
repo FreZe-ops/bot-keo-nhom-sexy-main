@@ -369,6 +369,24 @@ async def select_next_healthy_session(bot_id, previous_table=None, preferred_ses
         log(f"[{bot_name or bot_id}] [SESSION ASSIGNED] Đã phân bổ Session {chosen['name_service']} - Bàn {chosen['table']} (Bàn bot khác đang chạy: {list(claimed_tables)})")
         return chosen['name_service'], chosen['table']
 
+def get_latest_round(rounds):
+    """Lấy ván cược MỚI NHẤT từ mảng totalRound (sắp xếp theo stampTime và id lớn nhất)."""
+    if not isinstance(rounds, list) or not rounds:
+        return None
+    valid = []
+    for r in rounds:
+        if isinstance(r, dict):
+            try:
+                st = int(r.get('stampTime') or 0)
+                rid = int(r.get('id') or 0)
+                valid.append((st, rid, r))
+            except (TypeError, ValueError):
+                pass
+    if not valid:
+        return rounds[-1] if rounds else None
+    valid.sort(key=lambda x: (x[0], x[1]))
+    return valid[-1][2]
+
 async def wait_for_fresh_bet_signal(table_name="C01", min_time_ms=0, max_wait_s=75):
     """
     Chờ một lệnh hô MỚI TINH phát sinh SAU mốc min_time_ms (sau khi đã chờ đủ 20s).
@@ -386,9 +404,10 @@ async def wait_for_fresh_bet_signal(table_name="C01", min_time_ms=0, max_wait_s=
         with urllib.request.urlopen(req, timeout=3) as r:
             d = json.loads(r.read().decode('utf-8'))
             rounds = d.get('totalRound', [])
-            if rounds:
-                initial_stamp = int(rounds[0].get('stampTime') or 0)
-                initial_round_id = int(rounds[0].get('id') or 0)
+            latest_r = get_latest_round(rounds)
+            if latest_r:
+                initial_stamp = int(latest_r.get('stampTime') or 0)
+                initial_round_id = int(latest_r.get('id') or 0)
     except Exception:
         pass
 
@@ -404,8 +423,8 @@ async def wait_for_fresh_bet_signal(table_name="C01", min_time_ms=0, max_wait_s=
             )
             res_data = json.loads(res_text)
             rounds = res_data.get('totalRound', [])
-            if rounds:
-                latest_r = rounds[0]
+            latest_r = get_latest_round(rounds)
+            if latest_r:
                 cur_stamp = int(latest_r.get('stampTime') or 0)
                 cur_id = int(latest_r.get('id') or 0)
                 
@@ -468,7 +487,7 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
         try:
             loop = asyncio.get_event_loop()
             
-            # 1. Kiểm tra Database bàn cược xem ván mới đã hoàn thành chưa
+            # 1. Kiểm tra Database bàn cược xem ván mới đã hoàn thành chưa (lấy ván mới nhất từ totalRound)
             req_db = urllib.request.Request(predict_url, headers=get_api_headers())
             res_db_text = await loop.run_in_executor(
                 None,
@@ -476,11 +495,12 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
             )
             res_db = json.loads(res_db_text)
             rounds = res_db.get('totalRound', [])
-            if isinstance(rounds, list) and len(rounds) > 0:
-                latest_r = rounds[0]
+            latest_r = get_latest_round(rounds)
+            if latest_r:
                 cur_id = int(latest_r.get('id') or 0)
                 cur_winner = normalize_side(latest_r.get('roadFormat'))
-                if (cur_id > initial_round_id or len(rounds) > initial_round_count) and cur_winner in ('B', 'P', 'T'):
+                cur_stamp = int(latest_r.get('stampTime') or 0)
+                if (cur_id > initial_round_id or cur_stamp > min_valid_stamp or len(rounds) > initial_round_count) and cur_winner in ('B', 'P', 'T'):
                     if not db_winner:
                         db_winner = cur_winner
                         db_round_id = cur_id
