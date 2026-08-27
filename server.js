@@ -24,7 +24,7 @@ const { SESSION_LIST } = require("./config/predictResult.config");
 const { predictResultSchema } = require("./config/schema/index.schema");
 const { analyzeRoadProfile } = require("./utilities/roadAnalysis");
 const PORT = process.env.SERVER_PORT || 3201;
-const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS) || 2000;
+const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS) || 1000;
 const SERVER_VERBOSE_LOG = process.env.SERVER_VERBOSE_LOG === "true";
 
 app.use(express.json({ limit: "5mb" }));

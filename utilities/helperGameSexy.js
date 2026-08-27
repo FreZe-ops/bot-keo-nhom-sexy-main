@@ -419,12 +419,21 @@ async function checkAndUpdateDatabase(dataTableList, io = null) {
             const addedRounds = await syncNewRounds(tableName, bigRoads, dbTable);
             const game = currentGameStatus(table);
             const latest = addedRounds && addedRounds[0];
-            const winner = latest ? bptWinnerOf(latest) : '';
+            let winner = latest ? bptWinnerOf(latest) : '';
             const emitName = emitTableCode(tableName);
+
+            // Bắt ngay winner khi game đang ở trạng thái GP_WINNER
+            if (!winner && (game.status === 'GP_WINNER' || game.status === 'GP_ONE_CARD_DRAWN')) {
+                const bigRoadsArr = table.roadInfo?.bigRoads ?? [];
+                if (bigRoadsArr.length > 0) {
+                    winner = checkWhoWinRound(bigRoadsArr[0].road);
+                }
+            }
+
             if (io && game.status === 'GP_WINNER' && prevStatus !== 'GP_WINNER') {
                 io.emit('fe_result_visible', {
                     tableName: emitName,
-                    latestRound: latest || null,
+                    latestRound: latest || (table.roadInfo?.bigRoads ?? [])[0] || null,
                     resultWinner: winner || null,
                     statusGame: game.status,
                     stampTime: Date.now(),
