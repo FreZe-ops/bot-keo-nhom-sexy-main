@@ -700,7 +700,17 @@ class TelegramForwardBot:
             if uname:
                 self.dialog_cache[uname.lower().lstrip('@')] = d.entity
 
+    async def ensure_connected(self):
+        if not self.client:
+            self.client = await get_or_create_client(self.session_name, self.api_id, self.api_hash)
+        if not self.client.is_connected():
+            try:
+                await self.client.connect()
+            except Exception as e:
+                self.log(f"[RECONNECT] Đang kết nối lại Telegram: {e}")
+
     async def resolve_entity(self, target):
+        await self.ensure_connected()
         if not target:
             return None
         target_str = str(target).strip().lower().lstrip('@')
@@ -724,6 +734,7 @@ class TelegramForwardBot:
             self.log("[BUSY] Đang trong ca chạy dở, bỏ qua lệnh gọi trùng lặp!")
             return
 
+        await self.ensure_connected()
         entity = await self.resolve_entity(self.group_id)
         if not entity:
             self.log(f"[ERROR] Không tìm thấy nhóm ID={self.group_id}")
@@ -747,21 +758,25 @@ class TelegramForwardBot:
             async def forward_idx(index, label):
                 if index < len(messages_to_send):
                     try:
+                        await self.ensure_connected()
                         await self.client.forward_messages(entity, messages_to_send[index], silent=True, drop_author=True)
                         self.log(f"{label} (msg_id={messages_to_send[index].id}, index={index})")
                     except FloodWaitError as fe:
                         self.log(f"[FLOOD WAIT] Chờ {fe.seconds}s...")
                         await asyncio.sleep(fe.seconds + 1)
+                        await self.ensure_connected()
                         await self.client.forward_messages(entity, messages_to_send[index], silent=True, drop_author=True)
                     except Exception as ex:
                         self.log(f"[LỖI FORWARD index {index}]: {ex}")
 
             async def send_text(txt, label):
                 try:
+                    await self.ensure_connected()
                     await self.client.send_message(entity, txt)
                     self.log(f"{label}: {txt}")
                 except FloodWaitError as fe:
                     await asyncio.sleep(fe.seconds + 1)
+                    await self.ensure_connected()
                     await self.client.send_message(entity, txt)
                 except Exception as ex:
                     self.log(f"[LỖI SEND TEXT]: {ex}")
@@ -1030,6 +1045,7 @@ async def run_single_bot_schedule(bot, all_bots):
                     bot.log(f"Bắt đầu ca {slot_key}...")
                     sent_slots.add(slot_key)
                     try:
+                        await bot.ensure_connected()
                         source_entity = await bot.resolve_entity(bot.source_username)
                         if not source_entity:
                             bot.log(f"[ERROR] Không tìm thấy nguồn @{bot.source_username}")
