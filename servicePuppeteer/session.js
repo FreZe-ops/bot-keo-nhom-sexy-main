@@ -1591,10 +1591,22 @@ async function detectSignalLost() {
           const needles = [
             "tin hieu bi mat",
             "tín hiệu bị mất",
+            "tin hieu",
+            "tín hiệu",
+            "bi mat",
+            "bị mất",
+            "mat ket noi",
+            "mất kết nối",
+            "vui long lam moi",
+            "vui lòng làm mới",
+            "lam moi",
+            "làm mới",
             "signal lost",
             "video signal lost",
             "mat ket noi video",
             "mất kết nối video",
+            "disconnected",
+            "reconnect",
           ].map(norm);
 
           const fullText = norm(
@@ -1605,7 +1617,7 @@ async function detectSignalLost() {
           }
 
           const nodes = document.querySelectorAll(
-            "div, span, p, section, aside, button, label, [class*='error'], [class*='signal'], [class*='mask']"
+            "div, span, p, section, aside, button, label, [class*='error'], [class*='signal'], [class*='mask'], [class*='video']"
           );
           for (const el of nodes) {
             const txt = norm(el.innerText || el.textContent || "");
@@ -1613,10 +1625,19 @@ async function detectSignalLost() {
               return true;
             }
           }
+
+          // Kiểm tra thẻ video: nếu video bị đứng hoặc lỗi
+          const vids = document.querySelectorAll("video");
+          for (const v of vids) {
+            if (v && (v.paused || v.ended || v.error)) {
+              return true;
+            }
+          }
+
           return false;
         })
         .catch(() => false),
-      900,
+      1500,
       false
     );
     if (hit) return true;
@@ -1689,8 +1710,10 @@ async function clickSignalLostReload() {
           for (const el of allEls) {
             const txt = norm(el.innerText || el.textContent || "");
             if (
-              txt.includes("tin hieu bi mat") ||
+              txt.includes("tin hieu") ||
+              txt.includes("bi mat") ||
               txt.includes("vui long lam moi") ||
+              txt.includes("lam moi") ||
               txt.includes("signal lost")
             ) {
               fireFullClick(el);
@@ -1715,7 +1738,7 @@ async function clickSignalLostReload() {
   // 3. Fallback Playwright click vào locator text Reload
   for (const f of frames) {
     try {
-      const reloadLoc = f.locator("text=/^Reload$|Làm mới|Vui lòng làm mới/i");
+      const reloadLoc = f.locator("text=/^Reload$|Làm mới|Vui lòng làm mới|Tín hiệu/i");
       if ((await reloadLoc.count()) > 0) {
         await reloadLoc.first().click({ timeout: 1500, force: true });
         console.log("[SIGNAL CLICK] Đã click bằng Playwright locator text Reload!");
@@ -1800,13 +1823,13 @@ setInterval(async () => {
   }
 }, 3000);
 
-// Tự động bấm [🔄 Làm mới / Reload] định kỳ mỗi 3 phút để video stream luôn mượt mà và không bao giờ bị mất tín hiệu
+// Tự động bấm [🔄 Làm mới / Reload] định kỳ mỗi 30 GIÂY để video stream luôn mượt mà và không bao giờ bị mất tín hiệu
 setInterval(async () => {
   if (sessionInTableReady && currentInTable && currentInTable !== "NONE" && page && !page.isClosed()) {
-    console.log(`🔄 [AUTO RELOAD STREAM] Định kỳ 3 phút tự động bấm Reload bàn ${currentInTable}...`);
+    console.log(`🔄 [PROACTIVE RELOAD STREAM] Định kỳ 30s bấm Reload bàn ${currentInTable} giữ tín hiệu video...`);
     await clickSignalLostReload().catch(() => {});
   }
-}, 180000);
+}, 30000);
 
 async function detectFatalUiError() {
   if (!page || page.isClosed()) return "PAGE_CLOSED";
