@@ -1724,15 +1724,17 @@ async function clickSignalLostReload() {
     } catch (_) {}
   }
 
-  // 4. Click chính xác vào vị trí nút [🔄 Reload] trên thanh công cụ và tâm video
+  // 4. Click chính xác vào vị trí nút [🔄 Reload], nút [📶 Đổi Line], và tâm video
   if (page && !page.isClosed()) {
     try {
       const vp = page.viewportSize() || { width: 1440, height: 900 };
       // Tọa độ nút Reload trên toolbar góc dưới phải của Sexy Baccarat (x~89%, y~70.5%)
       await page.mouse.click(vp.width * 0.89, vp.height * 0.705);
+      // Tọa độ nút đổi Line Wifi bên cạnh (x~96%, y~70.5%)
+      await page.mouse.click(vp.width * 0.96, vp.height * 0.705);
       // Tọa độ dòng chữ Tín hiệu bị mất ở giữa màn hình (x~50%, y~52%)
       await page.mouse.click(vp.width * 0.50, vp.height * 0.52);
-      console.log("[SIGNAL CLICK] Đã click chuột Playwright vào tọa độ nút Reload và tâm video!");
+      console.log("[SIGNAL CLICK] Đã click chuột Playwright vào nút Reload, nút Line Wifi và tâm video!");
       return true;
     } catch (_) {}
   }
@@ -1744,7 +1746,7 @@ async function handleInTableSignalLost() {
   const lost = await detectSignalLost().catch(() => false);
   if (!lost) {
     if (signalReloadAttempts > 0) {
-      console.log("✅ [SIGNAL] Tín hiệu video đã phục hồi bình thường sau khi bấm làm mới!");
+      console.log("✅ [SIGNAL] Tín hiệu video đã phục hồi bình thường sau khi làm mới!");
       signalReloadAttempts = 0;
     }
     return false;
@@ -1759,17 +1761,24 @@ async function handleInTableSignalLost() {
   signalReloadAttempts += 1;
 
   console.log(
-    `[SIGNAL] Phát hiện 'Tín hiệu bị mất ... Vui lòng làm mới' (lần ${signalReloadAttempts}) — Đang click nút Làm Mới từ DOM...`
+    `[SIGNAL] Phát hiện 'Tín hiệu bị mất ... Vui lòng làm mới' (lần ${signalReloadAttempts})`
   );
   await helper.appendToLog(
-    `🔄 [SIGNAL] Tín hiệu bị mất — click làm mới lần ${signalReloadAttempts}`,
+    `🔄 [SIGNAL] Tín hiệu bị mất — xử lý lần ${signalReloadAttempts}`,
     logsNameProgress
   );
 
-  const ok = await clickSignalLostReload().catch(() => false);
-  console.log(
-    ok ? "✅ [SIGNAL] Đã click làm mới DOM thành công!" : "⚠️ [SIGNAL] Đang tìm và click lại nút làm mới..."
-  );
+  // Lần 1: Click nút Reload + đổi Line Wifi từ DOM / toolbar / tâm video
+  if (signalReloadAttempts === 1) {
+    await clickSignalLostReload().catch(() => false);
+  } else {
+    // Lần 2 trở đi nếu click không ăn: Re-enter lại bàn cược để tái tạo luồng video sạch
+    console.log(
+      `🔄 [SIGNAL RECOVER] Click Reload không ăn — Đang re-enter lại bàn ${currentInTable}...`
+    );
+    await enterTable(currentInTable, true).catch(() => {});
+    signalReloadAttempts = 0;
+  }
 
   return true;
 }
