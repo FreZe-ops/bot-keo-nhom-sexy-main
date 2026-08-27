@@ -349,46 +349,8 @@ async function saveScreenshot(target, tableName = "UNKNOWN", options = {}) {
  * Nhận diện màn hình bị "Tín hiệu bị mất" (vùng video ở giữa tối đen > 80%)
  */
 async function isSignalLostScreenshot(filepath) {
-  try {
-    const sharp = require("sharp");
-    const { data, info } = await sharp(filepath)
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    const { width, height, channels } = info;
-
-    const xMin = Math.floor(width * 0.2);
-    const xMax = Math.floor(width * 0.8);
-    const yMin = Math.floor(height * 0.15);
-    const yMax = Math.floor(height * 0.65);
-
-    let total = 0;
-    let dark = 0;
-
-    for (let y = yMin; y < yMax; y += 2) {
-      for (let x = xMin; x < xMax; x += 2) {
-        const idx = (y * width + x) * channels;
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-        total++;
-        if (r < 35 && g < 35 && b < 35) {
-          dark++;
-        }
-      }
-    }
-
-    const darkRatio = total > 0 ? dark / total : 0;
-    if (darkRatio >= 0.80) {
-      console.warn(
-        `[SCREENSHOT SIGNAL LOST DETECTED] Video area is ${(darkRatio * 100).toFixed(1)}% dark (${filepath})`
-      );
-      return true;
-    }
-    return false;
-  } catch (err) {
-    return false;
-  }
+  // Đã tắt kiểm tra tối màu pixel để tránh nhận nhầm bàn nền tối/dealer đổi bài là mất tín hiệu
+  return false;
 }
 
     // Không bao giờ lưu/gửi ảnh overlay kick. Xóa file ngay và báo session restart.
@@ -398,16 +360,6 @@ async function isSignalLostScreenshot(filepath) {
         success: false,
         fatalUi: "SESSION_EXPIRED",
         error: "SESSION_EXPIRED_CANVAS",
-      };
-    }
-
-    // Không bao giờ lưu/gửi ảnh bị "Tín hiệu bị mất" (màn hình video đen). Xóa file ngay và báo reload.
-    if (await isSignalLostScreenshot(filepath)) {
-      await fs.unlink(filepath).catch(() => {});
-      return {
-        success: false,
-        fatalUi: "SIGNAL_LOST",
-        error: "SIGNAL_LOST_BLACK_SCREEN",
       };
     }
 

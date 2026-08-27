@@ -3366,13 +3366,12 @@ async function captureTableRound(tableName, roundOptions = {}) {
       return { success: false, reason: "CAPTURE_TIMEOUT" };
     }
 
-    // 2. Xử lý khi ảnh bị mất tín hiệu video (màn hình đen) -> Tự động bấm Reload và chụp lại ngay!
-    if (result?.fatalUi === "SIGNAL_LOST" || await detectSignalLost().catch(() => false)) {
-      console.warn(`[SCREENSHOT RECOVER] Bàn ${cleanTarget} vừa phát hiện màn hình đen — Đang click Reload và chụp lại ảnh nét...`);
+    // 2. Xử lý khi ảnh bị mất tín hiệu video -> Tự động bấm Reload nhẹ nhàng và tiếp tục ở lại bàn
+    if (result?.fatalUi === "SIGNAL_LOST") {
+      console.warn(`[SCREENSHOT RECOVER] Bàn ${cleanTarget} phát hiện SIGNAL_LOST — Đang click Reload...`);
       await clickSignalLostReload();
-      await helper.delay(1800);
+      await helper.delay(1000);
 
-      // Thử chụp lại ảnh đẹp của bàn cược sau khi reload
       const retryResult = await screenshotHelper.saveScreenshot(targetToScreenshot, cleanTarget, {
         roundNum: roundOptions.roundNum,
         resultWinner: roundOptions.resultWinner,
@@ -3385,9 +3384,6 @@ async function captureTableRound(tableName, roundOptions = {}) {
       if (retryResult && retryResult.success) {
         result = retryResult;
         console.log(`✅ [SCREENSHOT RECOVER SUCCESS] Đã chụp lại thành công ảnh bàn ${cleanTarget} sau khi Reload!`);
-      } else {
-        await handleInTableSignalLost().catch(() => {});
-        return { success: false, reason: "SIGNAL_LOST" };
       }
     }
 
