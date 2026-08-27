@@ -3745,7 +3745,20 @@ async function captureRoundIfReady(tableName, latestRound, winner, source) {
   return false;
 }
 
-// DUY NHẤT SỰ KIỆN NÀY: Chụp ngay khi API vừa cập nhật điểm và cửa thắng B/P/T vào lịch sử BigRoad
+// Bắt khoảnh khắc vàng GP_WINNER khi FE vừa ra kết quả lật bài (trước khi chuyển sang đếm giây ván mới)
+socket.on("fe_result_visible", async (data) => {
+  const winner = String(data?.resultWinner || data?.latestRound?.roadFormat || "").trim().toUpperCase();
+  if (winner === "B" || winner === "P" || winner === "T") {
+    await captureRoundIfReady(
+      data?.tableName,
+      data?.latestRound,
+      winner,
+      "FE_RESULT_WINNER"
+    );
+  }
+});
+
+// Sự kiện khi API cập nhật điểm và cửa thắng B/P/T vào lịch sử BigRoad
 socket.on("new_round_completed", async (data) => {
   const winner = String(data?.resultWinner || data?.latestRound?.roadFormat || "").trim().toUpperCase();
   if (winner === "B" || winner === "P" || winner === "T") {

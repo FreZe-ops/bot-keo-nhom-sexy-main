@@ -424,9 +424,9 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
     """
     Chờ kết quả ván thật từ bàn và lấy ảnh chụp thật vừa hoàn thành của ĐÚNG ván đó.
     QUY TẮC ĐỐI CHIẾU CHUẨN XÁC:
-    1. Kiểm tra trực tiếp API Database bàn cược (/predict/get-table-by-name) xem đã có ván mới kết thúc chưa (id > initial_round_id).
-    2. Khi DB đã có ván mới, lấy chính xác kết quả roadFormat (B/P/T) thực tế của ván đó.
-    3. Đồng thời lấy ảnh chụp thật có tag kết quả tương ứng và TUYỆT ĐỐI KHÔNG DÙNG LẠI ẢNH BÁO BÀN.
+    1. Bắt buộc kiểm tra Database bàn cược (/predict/get-table-by-name) xem đã có ván mới kết thúc chưa (id > initial_round_id hoặc số round tăng).
+    2. CHỈ KHI DB ĐÃ MỞ THƯỞNG VÁN MỚI thì mới lấy kết quả và ảnh chụp tương ứng.
+    3. Tuyệt đối không lấy ảnh chụp lúc đang đếm giây trước khi dealer lật bài.
     """
     start_time = time.time()
     q = urllib.parse.quote(str(table_name).strip().upper())
@@ -454,63 +454,52 @@ async def wait_for_table_screenshot_and_result(table_name="C01", bet_side="B", m
                 cur_id = int(latest_r.get('id') or 0)
                 cur_winner = normalize_side(latest_r.get('roadFormat'))
                 if (cur_id > initial_round_id or len(rounds) > initial_round_count) and cur_winner in ('B', 'P', 'T'):
-                    db_winner = cur_winner
-                    db_round_id = cur_id
-                    log(f"[DB RESULT] Bàn {table_name} đã ghi nhận ván mới #{db_round_id} kết quả: {db_winner} (sau {time.time() - start_time:.1f}s)")
+                    if not db_winner:
+                        db_winner = cur_winner
+                        db_round_id = cur_id
+                        log(f"[DB RESULT] Bàn {table_name} đã ghi nhận ván mới #{db_round_id} kết quả: {db_winner} (sau {time.time() - start_time:.1f}s)")
 
-            # 2. Kiểm tra API ảnh chụp mới nhất
-            req_shot = urllib.request.Request(shot_url, headers=get_api_headers())
-            res_shot_text = await loop.run_in_executor(
-                None,
-                lambda: urllib.request.urlopen(req_shot, timeout=3).read().decode('utf-8')
-            )
-            res_shot = json.loads(res_shot_text)
-            if res_shot.get('success') and res_shot.get('data'):
-                shot_data = res_shot['data']
-                filepath = shot_data.get('filepath')
-                raw_winner = shot_data.get('resultWinner') or shot_data.get('winner')
-                shot_round = int(shot_data.get('roundNum') or 0)
-                stamp = int(shot_data.get('stampTime') or 0)
-                
-                if filepath and os.path.exists(filepath) and is_real_screenshot_file(filepath):
-                    # Loại trừ tuyệt đối ảnh báo bàn cũ
-                    if exclude_shot and os.path.abspath(filepath) == os.path.abspath(exclude_shot):
-                        pass
-                    else:
-                        file_win = extract_winner_from_filename(filepath)
-                        norm_win = normalize_side(raw_winner) or file_win
-                        
-                        # Ảnh phải có mốc thời gian sau lúc hô lệnh hoặc trùng mã ván mới
-                        is_truly_new = (stamp >= (min_valid_stamp - 3000)) or (db_round_id and shot_round >= db_round_id)
-                        if is_truly_new and norm_win in ('B', 'P', 'T') and file_win:
-                            if db_winner:
-                                if shot_round == db_round_id or file_win == db_winner or stamp >= min_valid_stamp:
-                                    log(f"[MATCH SHOT] Đã khớp ảnh chụp thật ván #{db_round_id}: {os.path.basename(filepath)} | Kết quả: {db_winner}")
-                                    return filepath, db_winner
-                            else:
-                                db_winner = norm_win
-                                log(f"[WAIT RESULT] Đã nhận ảnh chụp thật ván vừa cược bàn {table_name}: {os.path.basename(filepath)} | Kết quả mở: {norm_win}")
-                                return filepath, norm_win
+            # 2. CHỈ KHI DATABASE ĐÃ CÓ KẾT QUẢ VÁN MỚI thì mới tìm ảnh kết quả
+            if db_winner:
+                req_shot = urllib.request.Request(shot_url, headers=get_api_headers())
+                res_shot_text = await loop.run_in_executor(
+                    None,
+                    lambda: urllib.request.urlopen(req_shot, timeout=3).read().decode('utf-8')
+                )
+                res_shot = json.loads(res_shot_text)
+                if res_shot.get('success') and res_shot.get('data'):
+                    shot_data = res_shot['data']
+                    filepath = shot_data.get('filepath')
+                    raw_winner = shot_data.get('resultWinner') or shot_data.get('winner')
+                    shot_round = int(shot_data.get('roundNum') or 0)
+                    stamp = int(shot_data.get('stampTime') or 0)
+                    
+                    if filepath and os.path.exists(filepath) and is_real_screenshot_file(filepath):
+                        if not (exclude_shot and os.path.abspath(filepath) == os.path.abspath(exclude_shot)):
+                            file_win = extract_winner_from_filename(filepath)
+                            norm_win = normalize_side(raw_winner) or file_win
+                            
+                            # Ảnh phải chụp sau khi hô lệnh hoặc khớp đúng ván/kết quả mở thưởng
+                            is_truly_new = (stamp >= (min_valid_stamp + 10000)) or (db_round_id and shot_round >= db_round_id) or (file_win == db_winner)
+                            if is_truly_new and norm_win in ('B', 'P', 'T') and file_win:
+                                log(f"[MATCH SHOT] Đã khớp ảnh chụp thật ván #{db_round_id}: {os.path.basename(filepath)} | Kết quả: {db_winner}")
+                                return filepath, db_winner
 
-            # Nếu DB đã có kết quả nhưng API chưa có ảnh mới, tìm ảnh chụp thật cục bộ
-            if db_winner and (time.time() - start_time > 15):
-                local_shot = get_latest_local_screenshot_for_table(table_name, min_stamp_ms=min_valid_stamp, exclude_file=exclude_shot)
+                # Tìm ảnh cục bộ nếu API trả về trễ
+                local_shot = get_latest_local_screenshot_for_table(table_name, min_stamp_ms=min_valid_stamp + 10000, exclude_file=exclude_shot)
                 if local_shot:
                     return local_shot, db_winner
-                if time.time() - start_time > 30:
-                    real_match = get_real_screenshot_by_winner(table_name, db_winner, exclude_file=exclude_shot)
-                    if real_match:
-                        return real_match, db_winner
+                
+                real_match = get_real_screenshot_by_winner(table_name, db_winner, exclude_file=exclude_shot)
+                if real_match:
+                    return real_match, db_winner
 
         except Exception:
             pass
-        await asyncio.sleep(2)
+        await asyncio.sleep(1.5)
 
     # Nếu hết max_wait_s:
     if db_winner:
-        local_shot = get_latest_local_screenshot_for_table(table_name, min_stamp_ms=min_valid_stamp, exclude_file=exclude_shot)
-        if local_shot:
-            return local_shot, db_winner
         real_match = get_real_screenshot_by_winner(table_name, db_winner, exclude_file=exclude_shot)
         if real_match:
             return real_match, db_winner
