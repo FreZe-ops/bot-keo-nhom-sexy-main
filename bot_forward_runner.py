@@ -593,8 +593,10 @@ class TelegramForwardBot:
             self.preferred_sessions = ['NS1']
         elif self.bot_id == 'bot_forward_2':
             self.preferred_sessions = ['NS2']
+        elif self.bot_id == 'bot_forward_5':
+            self.preferred_sessions = ['NS4']
         else:
-            self.preferred_sessions = ['NS3', 'NS4']
+            self.preferred_sessions = ['NS3']
         
         phone_digits = ''.join(c for c in self.phone if c.isdigit())
         self.session_name = f'user_session_{phone_digits}' if phone_digits else f'user_session_{self.bot_id}'
