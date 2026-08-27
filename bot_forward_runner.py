@@ -793,8 +793,8 @@ class TelegramForwardBot:
                     delay = opening_delays[step_num] if step_num < len(opening_delays) else 20
                     await asyncio.sleep(delay)
 
-                # Gửi tin chuẩn bị vào lệnh (không capture bàn)
-                intro_text = self.config.get('send_intro_text', 'CHUẨN BỊ VÀO LỆNH NÀO AE 💸')
+                # Gửi tin chuẩn bị vào lệnh (nếu có cấu hình)
+                intro_text = self.config.get('send_intro_text', None)
                 if intro_text:
                     await send_text(intro_text, "Đã gửi tin chuẩn bị vào lệnh")
                     await asyncio.sleep(20)
