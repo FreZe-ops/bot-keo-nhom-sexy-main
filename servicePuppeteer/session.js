@@ -3533,6 +3533,31 @@ async function sendSessionData(sessionId, nameService, uriRequestData, quiet = f
   }
 }
 
+// Tự động re-sync session data khi socket kết nối lại
+socket.on("connect", () => {
+  console.log(`[SOCKET CONNECTED] ${nameServiceSocket} connected to server`);
+  if (lastCapturedSessionId) {
+    sendSessionData(
+      lastCapturedSessionId,
+      nameServiceSocket,
+      lastSessionRequestBase,
+      true
+    );
+  }
+});
+
+// Heartbeat định kỳ 15s gửi session data để server không bao giờ bị rỗng session
+setInterval(() => {
+  if (lastCapturedSessionId && socket && socket.connected) {
+    sendSessionData(
+      lastCapturedSessionId,
+      nameServiceSocket,
+      lastSessionRequestBase,
+      true
+    );
+  }
+}, 15000);
+
 socket.on(`${nameServiceSocket}_restart`, async (data) => {
   await helper.appendToLog(
     `(SOCKET) - RESTART ${nameServiceSocket} - (SERVER)`,

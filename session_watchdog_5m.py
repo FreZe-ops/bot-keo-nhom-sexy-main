@@ -40,8 +40,8 @@ def check_and_heal():
                 
                 # Nếu không ở trong bàn hoặc bị pause
                 if not table or table in ('NONE', 'LOBBY') or paused:
-                    log(f"⚠️ {ns}: Chưa vào bàn (table={table}, paused={paused})")
-                    # Sẽ được kiểm tra lại ở chu kỳ tiếp theo
+                    log(f"⚠️ {ns}: Chưa vào bàn hoặc đang paused (table={table}, paused={paused}) -> Restart session {ns}")
+                    restart_session_service(ns)
                     continue
                 
                 # Kiểm tra độ mới của ảnh chụp bàn
@@ -53,6 +53,10 @@ def check_and_heal():
                         age_s = time.time() - (stamp / 1000)
                         if age_s > 300: # Lâu quá 5 phút (300s) không có ảnh mới
                             log(f"❌ {ns} (Bàn {table}): Ảnh chụp đã cũ ({age_s:.1f}s > 300s) -> Cần restart")
+                            restart_session_service(ns)
+        except Exception as e:
+            log(f"⚠️ Lỗi kiểm tra session {ns}: {e}")
+
 def check_bot_services():
     services = ['BCR-bot1', 'BCR-bot2', 'BCR-bot3', 'BCR-bot4', 'BCR-forward-bot', 'BCR-server']
     for s in services:
