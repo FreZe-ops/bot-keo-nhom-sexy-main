@@ -369,44 +369,71 @@ async def select_next_healthy_session(bot_id, previous_table=None, preferred_ses
         log(f"[{bot_name or bot_id}] [SESSION ASSIGNED] Đã phân bổ Session {chosen['name_service']} - Bàn {chosen['table']} (Bàn bot khác đang chạy: {list(claimed_tables)})")
         return chosen['name_service'], chosen['table']
 
-async def get_live_table_prediction(table_name="C01", name_service="NS1"):
+async def wait_for_fresh_bet_signal(table_name="C01", min_time_ms=0, max_wait_s=75):
     """
-    Lấy kèo dự đoán thật và số lượng round hiện tại từ session / bàn cược đang chạy trên Playwright.
+    Chờ một lệnh hô MỚI TINH phát sinh SAU mốc min_time_ms (sau khi đã chờ đủ 20s).
+    Tuyệt đối không lấy lệnh cũ từ trước 20s đó.
     """
-    round_count = 0
-    latest_round_id = 0
+    start_t = time.time()
+    q = urllib.parse.quote(str(table_name).strip().upper())
+    url = f"{API_BASE_URL.rstrip('/')}/predict/get-table-by-name?tableName={q}"
+    
+    initial_stamp = 0
+    initial_round_id = 0
+    
     try:
-        q = urllib.parse.quote(str(table_name).strip().upper())
-        url = f"{API_BASE_URL.rstrip('/')}/predict/get-table-by-name?tableName={q}"
         req = urllib.request.Request(url, headers=get_api_headers())
-        loop = asyncio.get_event_loop()
-        res_text = await loop.run_in_executor(
-            None,
-            lambda: urllib.request.urlopen(req, timeout=3).read().decode('utf-8')
-        )
-        res_data = json.loads(res_text)
-        payload = res_data.get('data', res_data) if isinstance(res_data, dict) else {}
-        
-        rounds = payload.get('totalRound', [])
-        if isinstance(rounds, list) and len(rounds) > 0:
-            round_count = len(rounds)
-            latest_round_id = int(rounds[0].get('id') or 0)
-        
-        # Đọc tỷ lệ dự đoán Banker / Player
-        pct = payload.get('percentCurrent', {})
-        banker_pct = float(pct.get('banker') or pct.get('B') or 50)
-        player_pct = float(pct.get('player') or pct.get('P') or 50)
-        
-        if banker_pct > player_pct:
-            return 'B', '🔴 CÁI', round_count, latest_round_id
-        elif player_pct > banker_pct:
-            return 'P', '🔵 CON', round_count, latest_round_id
-    except Exception as e:
-        log(f"[WARN] Lỗi lấy dự đoán live {table_name}: {e}. Dùng thuật toán cầu.")
+        with urllib.request.urlopen(req, timeout=3) as r:
+            d = json.loads(r.read().decode('utf-8'))
+            rounds = d.get('totalRound', [])
+            if rounds:
+                initial_stamp = int(rounds[0].get('stampTime') or 0)
+                initial_round_id = int(rounds[0].get('id') or 0)
+    except Exception:
+        pass
 
-    # Fallback tự chọn
-    is_cai = random.choice([True, False])
-    return ('B', '🔴 CÁI', round_count, latest_round_id) if is_cai else ('P', '🔵 CON', round_count, latest_round_id)
+    log(f"⏳ Đang chờ lệnh hô MỚI từ nhóm thật bàn {table_name} (sau mốc {min_time_ms}, round hiện tại #{initial_round_id})...")
+
+    while time.time() - start_t < max_wait_s:
+        try:
+            loop = asyncio.get_event_loop()
+            req = urllib.request.Request(url, headers=get_api_headers())
+            res_text = await loop.run_in_executor(
+                None,
+                lambda: urllib.request.urlopen(req, timeout=3).read().decode('utf-8')
+            )
+            res_data = json.loads(res_text)
+            rounds = res_data.get('totalRound', [])
+            if rounds:
+                latest_r = rounds[0]
+                cur_stamp = int(latest_r.get('stampTime') or 0)
+                cur_id = int(latest_r.get('id') or 0)
+                
+                # Lệnh mới xuất hiện khi ván trước kết thúc sau min_time_ms hoặc có round mới
+                if cur_stamp >= min_time_ms or cur_id > initial_round_id:
+                    pct = res_data.get('percentCurrent', {})
+                    round_signal = str(pct.get('Round') or '').upper()
+                    banker_pct = float(pct.get('banker') or pct.get('B') or 50)
+                    player_pct = float(pct.get('player') or pct.get('P') or 50)
+                    
+                    bet_side = 'B' if (banker_pct >= player_pct) else 'P'
+                    if round_signal.startswith('P'):
+                        bet_side = 'P'
+                    elif round_signal.startswith('B'):
+                        bet_side = 'B'
+
+                    bet_text = '🔴 CÁI' if bet_side == 'B' else '🔵 CON'
+                    log(f"✅ [FRESH BET SIGNAL] Nhận được lệnh hô MỚI bàn {table_name}: {bet_text} (Ván #{cur_id + 1}) sau {time.time() - start_t:.1f}s")
+                    return bet_side, bet_text, len(rounds), cur_id
+        except Exception:
+            pass
+        await asyncio.sleep(1.5)
+
+    # Fallback nếu quá max_wait_s
+    bet_side = random.choice(['B', 'P'])
+    bet_text = '🔴 CÁI' if bet_side == 'B' else '🔵 CON'
+    log(f"⚠️ [SIGNAL TIMEOUT] Dùng lệnh mặc định bàn {table_name}: {bet_text} (round #{initial_round_id})")
+    return bet_side, bet_text, 0, initial_round_id
 
 def normalize_side(val):
     if not val:
@@ -831,11 +858,14 @@ class TelegramForwardBot:
                     await send_text(preview_caption, f"Đã báo bàn cược {self.session_table}")
                 await asyncio.sleep(20)
 
-            # 2. Chờ 20s trước, sau đó mới lấy tin hô Con / Cái trực tiếp từ bàn đó
-            self.log(f"Chờ 20s trước khi lấy lệnh hô trực tiếp từ bàn {self.session_table} ({self.name_service})...")
+            # 2. Chờ 20s trước, sau đó chỉ nhận lệnh hô MỚI TINH phát sinh sau 20s này
+            wait_start_ms = int(time.time() * 1000)
+            self.log(f"Chờ đủ 20s, sau đó lấy lệnh hô MỚI TINH phát sinh từ nhóm thật bàn {self.session_table}...")
             await asyncio.sleep(20)
 
-            bet_side, bet_text, initial_round_count, initial_round_id = await get_live_table_prediction(self.session_table, self.name_service)
+            # Lấy lệnh hô MỚI phát sinh sau mốc 20s chờ (tuyệt đối không lấy lệnh cũ từ trước 20s)
+            min_signal_time = wait_start_ms + 18000
+            bet_side, bet_text, initial_round_count, initial_round_id = await wait_for_fresh_bet_signal(self.session_table, min_time_ms=min_signal_time)
             bet_time_ms = int(time.time() * 1000)  # Ghi nhận mốc thời gian hô lệnh
 
             # Định dạng lệnh hô
@@ -844,7 +874,7 @@ class TelegramForwardBot:
             elif self.bet_amount_label == "1000":
                 bet_text_to_send = f"{bet_text} 1000"
             else:
-                bet_text_to_send = bet_text
+                bet_text_to_send = f"{bet_text} {self.bet_amount_label}"
 
             await send_text(bet_text_to_send, f"Đã gửi tin HÔ (lấy trực tiếp theo bàn {self.session_table})")
 
