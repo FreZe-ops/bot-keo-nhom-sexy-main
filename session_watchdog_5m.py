@@ -1,8 +1,17 @@
-import time
-import urllib.request
-import json
-import subprocess
+import sys
 import os
+import time
+import subprocess
+import json
+import urllib.request
+import urllib.parse
+
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
 
 NSSM = r'C:\tools\nssm\nssm-2.24\win64\nssm.exe'
 API_BASE_URL = 'http://127.0.0.1:3201'
@@ -10,7 +19,7 @@ LOG_FILE = r'C:\apps\bot-keo-nhom-bcr-main\logs\auto_restart.log'
 
 def log(msg):
     now_str = time.strftime('%Y-%m-%d %H:%M:%S')
-    line = f"[{now_str}][WATCHDOG-5M] {msg}"
+    line = f"[{now_str}][WATCHDOG] {msg}"
     print(line, flush=True)
     try:
         os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
@@ -19,17 +28,18 @@ def log(msg):
     except Exception:
         pass
 
-def restart_session(session_num):
+def restart_session(ns):
+    session_num = ns.replace('NS', '').strip()
     s_name = f"BCR-session{session_num}"
-    log(f"🚨 PHÁT HIỆN {s_name} (NS{session_num}) TREO/KHÔNG CÓ ẢNH > 5 PHÚT -> TIẾN HÀNH RESTART NGAY!")
+    log(f"🚨 RESTART {s_name} ({ns})...")
     try:
         res = subprocess.run(f'"{NSSM}" restart {s_name}', capture_output=True, text=True, shell=True, timeout=30)
-        log(f"  -> Kết quả restart {s_name}: {res.stdout.strip()}")
+        log(f"  -> Ket qua restart {s_name}: {res.stdout.strip()}")
     except Exception as e:
-        log(f"  -> Lỗi restart {s_name}: {e}")
+        log(f"  -> Loi restart {s_name}: {e}")
 
 def check_and_heal():
-    for idx, ns in enumerate(['NS1', 'NS2', 'NS3', 'NS4'], 1):
+    for ns in ['NS1', 'NS2', 'NS3', 'NS4']:
         try:
             url = f"{API_BASE_URL}/api/get-active-table?nameService={ns}"
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -40,22 +50,22 @@ def check_and_heal():
                 
                 # Nếu không ở trong bàn hoặc bị pause
                 if not table or table in ('NONE', 'LOBBY') or paused:
-                    log(f"⚠️ {ns}: Chưa vào bàn hoặc đang paused (table={table}, paused={paused}) -> Restart session {ns}")
-                    restart_session_service(ns)
+                    log(f"⚠️ {ns}: Chua vao ban hoac paused (table={table}, paused={paused}) -> Restart {ns}")
+                    restart_session(ns)
                     continue
                 
                 # Kiểm tra độ mới của ảnh chụp bàn
-                shot_url = f"{API_BASE_URL}/api/latest-screenshot?tableName={urllib.parse.quote(table)}"
+                shot_url = f"{API_BASE_URL}/api/latest-screenshot?tableName={urllib.parse.quote(str(table))}"
                 with urllib.request.urlopen(urllib.request.Request(shot_url), timeout=3.5) as sr:
                     sdata = json.loads(sr.read().decode('utf-8'))
                     if sdata.get('success') and sdata.get('data'):
                         stamp = sdata['data'].get('stampTime', 0)
                         age_s = time.time() - (stamp / 1000)
-                        if age_s > 300: # Lâu quá 5 phút (300s) không có ảnh mới
-                            log(f"❌ {ns} (Bàn {table}): Ảnh chụp đã cũ ({age_s:.1f}s > 300s) -> Cần restart")
-                            restart_session_service(ns)
+                        if age_s > 300: # Lâu quá 5 phút không có ảnh mới
+                            log(f"❌ {ns} (Ban {table}): Anh chup da cu ({age_s:.1f}s > 300s) -> Restart {ns}")
+                            restart_session(ns)
         except Exception as e:
-            log(f"⚠️ Lỗi kiểm tra session {ns}: {e}")
+            log(f"⚠️ Loi kiem tra session {ns}: {e}")
 
 def check_bot_services():
     services = ['BCR-bot1', 'BCR-bot2', 'BCR-bot3', 'BCR-bot4', 'BCR-forward-bot', 'BCR-server']
@@ -64,20 +74,20 @@ def check_bot_services():
             res = subprocess.run(f'"{NSSM}" status {s}', capture_output=True, text=True, shell=True, timeout=10)
             status = res.stdout.strip()
             if 'STOPPED' in status or 'PAUSED' in status:
-                log(f"🚨 PHÁT HIỆN DỊCH VỤ {s} ĐANG BỊ DỪNG ({status}) -> TỰ ĐỘNG KHỞI ĐỘNG LẠI NGAY!")
+                log(f"🚨 PHAT HIEN DICH VU {s} DANG BI DUNG ({status}) -> TU DONG KHOI DONG LAI NGAY!")
                 subprocess.run(f'"{NSSM}" start {s}', capture_output=True, text=True, shell=True, timeout=15)
         except Exception as e:
-            log(f"⚠️ Lỗi check status {s}: {e}")
+            log(f"⚠️ Loi check status {s}: {e}")
 
 def main_loop():
-    log("Khởi động Watchdog giám sát tự động 5 phút cho tất cả Session & Bot...")
+    log("Khoi dong Watchdog 24/7 tu dong giam sat va tu phuc hoi...")
     while True:
         try:
             check_and_heal()
             check_bot_services()
         except Exception as e:
-            log(f"Lỗi vòng lặp giám sát: {e}")
-        time.sleep(60)
+            log(f"Loi vong lap giam sat: {e}")
+        time.sleep(45)
 
 if __name__ == '__main__':
     main_loop()
