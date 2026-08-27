@@ -1774,6 +1774,23 @@ async function handleInTableSignalLost() {
   return true;
 }
 
+// Active Watchdog: Tự động kiểm tra và bấm [Làm mới / Reload] ngay trong vòng 2-3s nếu phát hiện "Tín hiệu bị mất"
+setInterval(async () => {
+  if (
+    sessionInTableReady &&
+    currentInTable &&
+    currentInTable !== "NONE" &&
+    page &&
+    !page.isClosed() &&
+    !sessionRecovering &&
+    !resetInFlight
+  ) {
+    try {
+      await handleInTableSignalLost();
+    } catch (_) {}
+  }
+}, 3000);
+
 // Tự động bấm [🔄 Làm mới / Reload] định kỳ mỗi 3 phút để video stream luôn mượt mà và không bao giờ bị mất tín hiệu
 setInterval(async () => {
   if (sessionInTableReady && currentInTable && currentInTable !== "NONE" && page && !page.isClosed()) {
