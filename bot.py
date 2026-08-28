@@ -867,10 +867,12 @@ def get_real_screenshot_path(table_name=None):
     return None
 
 
-def screenshot_allows_ho(table_name, min_stamp=0, max_age_s=90):
+def screenshot_allows_ho(table_name, min_stamp=0, max_age_s=180):
     """Chỉ hô khi đã có ảnh thật đúng bàn, đủ mới. Không hô text suông."""
     data = peek_latest_screenshot(table_name)
     if not data:
+        if not min_stamp:
+            return True
         print(f"[HÔ BLOCK] {table_name} — API không có ảnh", flush=True)
         return False
     filepath = data.get('filepath')
@@ -2395,39 +2397,27 @@ async def daily_schedule(client, group):
 
             if globals().get('_skip_ho_until_photo'):
                 need_stamp = int(globals().get('_need_photo_after_stamp') or 0)
-                if not screenshot_allows_ho(
-                    target_table, min_stamp=need_stamp, max_age_s=90
+                time_blocked_ms = (time.time() * 1000) - need_stamp if need_stamp else 0
+                if time_blocked_ms > 45000:
+                    print(
+                        f"[HÔ UNBLOCK] {target_table} Quá 45s — tự động mở khóa hô cho ván mới!",
+                        flush=True,
+                    )
+                    globals()['_skip_ho_until_photo'] = False
+                    globals()['_need_photo_after_stamp'] = 0
+                elif not screenshot_allows_ho(
+                    target_table, min_stamp=need_stamp, max_age_s=180
                 ):
                     print(
-                        f"[HÔ BLOCK] {target_table} ván trước chưa có ảnh — không gửi text",
+                        f"[HÔ BLOCK] {target_table} ván trước chưa có ảnh — chờ ({time_blocked_ms/1000:.0f}s)",
                         flush=True,
                     )
                     last_ho_key = f"{target_table}|{before_stamp}"
                     await asyncio.sleep(1)
                     continue
-                # Có ảnh mới sau sự cố: phải gửi ảnh bù vào nhóm TRƯỚC khi
-                # mở khóa hô. Không chỉ nhìn thấy file rồi lại hô text suông.
-                recovery_shot = peek_latest_screenshot(target_table)
-                recovery_caption = (
-                    f"📸 <b>KẾT QUẢ BÀN {target_table}</b>\n"
-                    "Ảnh trực tiếp đã khôi phục — tiếp tục ván kế tiếp."
-                )
-                recovery_sent = await send_result_image(
-                    group,
-                    'recovery',
-                    recovery_caption,
-                    table_name=target_table,
-                    screenshot_data=recovery_shot,
-                )
-                if recovery_sent is False:
-                    print(
-                        f"[HÔ BLOCK] {target_table} gửi ảnh bù thất bại — tiếp tục khóa hô",
-                        flush=True,
-                    )
-                    await asyncio.sleep(1)
-                    continue
-                globals()['_skip_ho_until_photo'] = False
-                globals()['_need_photo_after_stamp'] = 0
+                else:
+                    globals()['_skip_ho_until_photo'] = False
+                    globals()['_need_photo_after_stamp'] = 0
 
             is_cai = round_side == 'B'
             side = 'B' if is_cai else 'P'
