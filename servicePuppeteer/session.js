@@ -1593,22 +1593,12 @@ async function detectSignalLost() {
           const needles = [
             "tin hieu bi mat",
             "tín hiệu bị mất",
-            "tin hieu",
-            "tín hiệu",
-            "bi mat",
-            "bị mất",
-            "mat ket noi",
-            "mất kết nối",
             "vui long lam moi",
             "vui lòng làm mới",
-            "lam moi",
-            "làm mới",
             "signal lost",
             "video signal lost",
             "mat ket noi video",
             "mất kết nối video",
-            "disconnected",
-            "reconnect",
           ].map(norm);
 
           const fullText = norm(
@@ -1619,19 +1609,11 @@ async function detectSignalLost() {
           }
 
           const nodes = document.querySelectorAll(
-            "div, span, p, section, aside, button, label, [class*='error'], [class*='signal'], [class*='mask'], [class*='video']"
+            "div, span, p, section, [class*='error'], [class*='signal'], [class*='mask']"
           );
           for (const el of nodes) {
             const txt = norm(el.innerText || el.textContent || "");
             if (needles.some((n) => txt.includes(n))) {
-              return true;
-            }
-          }
-
-          // Kiểm tra thẻ video: nếu video bị đứng hoặc lỗi
-          const vids = document.querySelectorAll("video");
-          for (const v of vids) {
-            if (v && (v.paused || v.ended || v.error)) {
               return true;
             }
           }
