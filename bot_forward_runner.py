@@ -799,6 +799,29 @@ class TelegramForwardBot:
                     await send_text(intro_text, "Đã gửi tin chuẩn bị vào lệnh")
                     await asyncio.sleep(20)
 
+                # Gửi ảnh chụp bàn báo bàn sang nhóm báo bàn riêng (nếu có cấu hình)
+                if self.config.get('send_table_preview'):
+                    preview_shot = get_latest_local_screenshot_for_table(self.session_table) or get_any_table_preview_screenshot()
+                    caption_template = self.config.get('send_table_preview_caption', '🎲 BÀN CƯỢC: BACCARAT {table} | CHUẨN BỊ VÀO LỆNH NÀO AE 💸')
+                    preview_caption = str(caption_template).replace('{table}', self.session_table)
+                    
+                    target_preview_group = self.config.get('table_preview_group_id', self.group_id)
+                    target_preview_entity = await self.resolve_entity(target_preview_group)
+
+                    if preview_shot and os.path.exists(preview_shot):
+                        try:
+                            self.log(f"Đang gửi ảnh bàn cược hiện tại kèm caption sang nhóm {target_preview_group}: {os.path.basename(preview_shot)}...")
+                            await self.client.send_file(target_preview_entity or entity, preview_shot, caption=preview_caption)
+                            self.log(f"✅ Đã gửi ảnh bàn cược kèm caption ({self.session_table}) sang nhóm {target_preview_group}")
+                        except Exception as ex:
+                            self.log(f"[LỖI GỬI ẢNH BÀN KÈM CAPTION]: {ex}")
+                            if target_preview_entity:
+                                await self.client.send_message(target_preview_entity, preview_caption)
+                    else:
+                        if target_preview_entity:
+                            await self.client.send_message(target_preview_entity, preview_caption)
+                    await asyncio.sleep(20)
+
                 # 2. Chờ 20s rồi phát lệnh hô Con/Cái
                 self.log("Chờ 20s trước khi phát lệnh hô...")
                 await asyncio.sleep(20)
@@ -875,22 +898,28 @@ class TelegramForwardBot:
                 await send_text(custom_table_text, f"Đã gửi tin báo bàn {self.session_table}")
                 await asyncio.sleep(20)
 
-            # Gửi ảnh chụp bàn hiện tại KÈM CAPTION báo bàn cược
+            # Gửi ảnh chụp bàn hiện tại KÈM CAPTION báo bàn cược (vào nhóm chính hoặc nhóm báo bàn riêng)
             preview_shot = None
             if self.config.get('send_table_preview'):
                 preview_shot = get_latest_local_screenshot_for_table(self.session_table)
                 caption_template = self.config.get('send_table_preview_caption', '🎲 BÀN CƯỢC: BACCARAT {table} | CHUẨN BỊ VÀO LỆNH NÀO AE 💸')
                 preview_caption = str(caption_template).replace('{table}', self.session_table)
+                
+                target_preview_group = self.config.get('table_preview_group_id', self.group_id)
+                target_preview_entity = await self.resolve_entity(target_preview_group)
+
                 if preview_shot and os.path.exists(preview_shot):
                     try:
-                        self.log(f"Đang gửi ảnh bàn cược hiện tại kèm caption: {os.path.basename(preview_shot)}...")
-                        await self.client.send_file(entity, preview_shot, caption=preview_caption)
-                        self.log(f"✅ Đã gửi ảnh bàn cược kèm caption ({self.session_table})")
+                        self.log(f"Đang gửi ảnh bàn cược hiện tại kèm caption sang nhóm {target_preview_group}: {os.path.basename(preview_shot)}...")
+                        await self.client.send_file(target_preview_entity or entity, preview_shot, caption=preview_caption)
+                        self.log(f"✅ Đã gửi ảnh bàn cược kèm caption ({self.session_table}) sang nhóm {target_preview_group}")
                     except Exception as ex:
                         self.log(f"[LỖI GỬI ẢNH BÀN KÈM CAPTION]: {ex}")
-                        await send_text(preview_caption, f"Đã báo bàn cược {self.session_table}")
+                        if target_preview_entity:
+                            await self.client.send_message(target_preview_entity, preview_caption)
                 else:
-                    await send_text(preview_caption, f"Đã báo bàn cược {self.session_table}")
+                    if target_preview_entity:
+                        await self.client.send_message(target_preview_entity, preview_caption)
                 await asyncio.sleep(20)
 
             # 2. Chờ 20s trước, sau đó chỉ nhận lệnh hô MỚI TINH phát sinh sau 20s này
