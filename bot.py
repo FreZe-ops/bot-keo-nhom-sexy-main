@@ -786,11 +786,14 @@ async def get_real_screenshot_data_async(
                         except (TypeError, ValueError):
                             min_n = None
                         if min_n is not None and stamp_n < min_n:
-                            print(
-                                f"[API REAL SCREENSHOT] ảnh cũ stamp={stamp_n} < min={min_n} — chờ...",
-                                flush=True,
-                            )
-                        elif shot_winner not in ('B', 'P', 'T'):
+                            age_ms = (time.time() * 1000) - stamp_n
+                            if age_ms > 90000:
+                                print(
+                                    f"[API REAL SCREENSHOT] ảnh cũ stamp={stamp_n} (cách đây {age_ms/1000:.0f}s > 90s) — chờ...",
+                                    flush=True,
+                                )
+                                continue
+                        if shot_winner not in ('B', 'P', 'T'):
                             print(
                                 f"[API REAL SCREENSHOT] bỏ ảnh không phải B/P/T "
                                 f"winner={shot_winner} — chờ FE cập nhật...",
