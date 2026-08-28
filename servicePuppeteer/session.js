@@ -3399,11 +3399,11 @@ async function captureTableRound(tableName, roundOptions = {}) {
       return { success: false, reason: "CAPTURE_TIMEOUT" };
     }
 
-    // 2. Xử lý khi ảnh bị mất tín hiệu video -> Tự động bấm Reload nhẹ nhàng và tiếp tục ở lại bàn
-    if (result?.fatalUi === "SIGNAL_LOST") {
-      console.warn(`[SCREENSHOT RECOVER] Bàn ${cleanTarget} phát hiện SIGNAL_LOST — Đang click Reload...`);
+    // 2. Xử lý khi ảnh bị màn hình đen / mất tín hiệu video (BLANK_CAPTURE hoặc SIGNAL_LOST) -> Tự động bấm Reload và re-enter bàn
+    if (result && !result.success && (result.error === "BLANK_CAPTURE" || result.fatalUi === "SIGNAL_LOST")) {
+      console.warn(`[SCREENSHOT BLANK/SIGNAL] Bàn ${cleanTarget} chụp trúng màn hình đen/mất tín hiệu (${result.error}) — Đang tự động click Reload + đổi Line Wifi...`);
       await clickSignalLostReload();
-      await helper.delay(1000);
+      await helper.delay(1200);
 
       const retryResult = await screenshotHelper.saveScreenshot(targetToScreenshot, cleanTarget, {
         roundNum: roundOptions.roundNum,
@@ -3417,6 +3417,9 @@ async function captureTableRound(tableName, roundOptions = {}) {
       if (retryResult && retryResult.success) {
         result = retryResult;
         console.log(`✅ [SCREENSHOT RECOVER SUCCESS] Đã chụp lại thành công ảnh bàn ${cleanTarget} sau khi Reload!`);
+      } else {
+        console.warn(`🔄 [SIGNAL RECOVER TABLE] Click Reload vẫn đen màn hình — Đang re-enter lại bàn ${cleanTarget} ngay lập tức...`);
+        await enterTable(cleanTarget, true).catch(() => {});
       }
     }
 

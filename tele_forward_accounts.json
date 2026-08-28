@@ -180,8 +180,7 @@
       "tie_rate": 0.05,
       "opening_order": [0, 1, 2, 3],
       "opening_delays": [20, 20, 20, 20],
-      "send_table_preview": true,
-      "send_table_preview_caption": "🎲 BÀN CƯỢC: BACCARAT {table} | CHUẨN BỊ VÀO LỆNH NÀO AE 💸",
+      "send_table_preview": false,
       "ending_order": [4],
       "ending_delays": [20]
     }

@@ -319,17 +319,22 @@ async def get_healthy_active_sessions():
     return healthy
 
 BOT_PREFERRED_SESSIONS = {
-    'bot_forward_1': ['NS1', 'NS4', 'NS2', 'NS3'],
-    'bot_forward_2': ['NS2', 'NS4', 'NS1', 'NS3'],
-    'bot_forward_3': ['NS3', 'NS4', 'NS1', 'NS2'],
+    'bot_forward_1': ['NS1', 'NS2', 'NS3', 'NS4'],  # Trâm Anh 10% (C01/C03)
+    'bot_forward_2': ['NS2', 'NS3', 'NS4', 'NS1'],  # Trâm Anh 5000 (C02/C04)
+    'bot_forward_3': ['NS3', 'NS4', 'NS1', 'NS2'],  # MINH THẬT (C05/C06)
+    'bot_forward_4': ['NS3', 'NS4', 'NS1', 'NS2'],  # MINH ẢO (C05/C06)
+    'bot_forward_5': ['NS4', 'NS1', 'NS2', 'NS3'],  # Hải Yến THẬT (C07/C08)
+    'bot_forward_6': ['NS4', 'NS1', 'NS2', 'NS3'],  # Hải Yến ẢO (C07/C08)
+    'bot_forward_7': ['NS1', 'NS3', 'NS2', 'NS4'],  # Bảo Ngọc THẬT
+    'bot_forward_8': ['NS2', 'NS4', 'NS1', 'NS3'],  # Bảo Ngọc ẢO
 }
 GLOBAL_BOT_TABLE_CLAIMS = {}
 GLOBAL_CLAIM_LOCK = asyncio.Lock()
 
 async def select_next_healthy_session(bot_id, previous_table=None, preferred_sessions=None, bot_name=""):
     """
-    Phân bổ Session cho 3 Bot thật qua 4 Session (NS1, NS2, NS3, NS4).
-    Đảm bảo 3 Bot luôn luôn vào 3 Bàn khác nhau 100%, tuyệt đối không trùng bàn!
+    Phân bổ Session cho các Bot qua 4 Session (NS1, NS2, NS3, NS4).
+    Đảm bảo các Bot chạy cùng lúc luôn luôn vào các Bàn khác nhau (C01, C02, C05, C08...), không trùng bàn!
     """
     async with GLOBAL_CLAIM_LOCK:
         healthy = await get_healthy_active_sessions()
@@ -338,7 +343,7 @@ async def select_next_healthy_session(bot_id, previous_table=None, preferred_ses
         # Danh sách các bàn đang bị bot khác sử dụng / khóa
         claimed_tables = {str(t).upper().strip() for b_id, t in GLOBAL_BOT_TABLE_CLAIMS.items() if b_id != bot_id and t}
         
-        # Thứ tự ưu tiên riêng biệt cho từng bot để không đụng nhau
+        # Thứ tự ưu tiên riêng biệt cho từng bot để phân bổ rải đều khắp các bàn
         pref_list = BOT_PREFERRED_SESSIONS.get(bot_id, ['NS1', 'NS2', 'NS3', 'NS4'])
         
         chosen = None
@@ -357,9 +362,14 @@ async def select_next_healthy_session(bot_id, previous_table=None, preferred_ses
             fallback_map = {
                 'bot_forward_1': ('NS1', 'C01'),
                 'bot_forward_2': ('NS2', 'C02'),
-                'bot_forward_3': ('NS3', 'C05')
+                'bot_forward_3': ('NS3', 'C05'),
+                'bot_forward_4': ('NS3', 'C05'),
+                'bot_forward_5': ('NS4', 'C08'),
+                'bot_forward_6': ('NS4', 'C08'),
+                'bot_forward_7': ('NS1', 'C01'),
+                'bot_forward_8': ('NS2', 'C02'),
             }
-            fallback_ns, fallback_table = fallback_map.get(bot_id, ('NS4', 'C08'))
+            fallback_ns, fallback_table = fallback_map.get(bot_id, ('NS1', 'C01'))
             GLOBAL_BOT_TABLE_CLAIMS[bot_id] = fallback_table
             log(f"[{bot_name}] Fallback về Bàn {fallback_table} ({fallback_ns})")
             return fallback_ns, fallback_table
