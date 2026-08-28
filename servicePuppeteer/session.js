@@ -3399,13 +3399,13 @@ async function captureTableRound(tableName, roundOptions = {}) {
       return { success: false, reason: "CAPTURE_TIMEOUT" };
     }
 
-    // 2. Xử lý khi ảnh bị màn hình đen / mất tín hiệu video (BLANK_CAPTURE hoặc SIGNAL_LOST) -> Tự động bấm Reload và re-enter bàn
-    if (result && !result.success && (result.error === "BLANK_CAPTURE" || result.fatalUi === "SIGNAL_LOST")) {
-      console.warn(`[SCREENSHOT BLANK/SIGNAL] Bàn ${cleanTarget} chụp trúng màn hình đen/mất tín hiệu (${result.error}) — Đang tự động click Reload + đổi Line Wifi...`);
+    // 2. Xử lý khi ảnh bị mất tín hiệu video -> Click Reload và Re-enter bàn để tái tạo luồng video sạch
+    if (result?.fatalUi === "SIGNAL_LOST") {
+      console.warn(`[SCREENSHOT RECOVER] Bàn ${cleanTarget} phát hiện SIGNAL_LOST (màn hình đen) — Đang click Reload...`);
       await clickSignalLostReload();
       await helper.delay(1200);
 
-      const retryResult = await screenshotHelper.saveScreenshot(targetToScreenshot, cleanTarget, {
+      let retryResult = await screenshotHelper.saveScreenshot(targetToScreenshot, cleanTarget, {
         roundNum: roundOptions.roundNum,
         resultWinner: roundOptions.resultWinner,
         shoeNum: roundOptions.shoeNum,
@@ -3414,12 +3414,24 @@ async function captureTableRound(tableName, roundOptions = {}) {
         trimBlack: false,
       }).catch(() => null);
 
+      if (!retryResult || !retryResult.success) {
+        console.warn(`[SCREENSHOT RECOVER] Click Reload chưa hết đen — Đang Re-enter lại bàn ${cleanTarget} để khôi phục WebRTC...`);
+        await enterTable(cleanTarget, true).catch(() => {});
+        await helper.delay(2500);
+
+        retryResult = await screenshotHelper.saveScreenshot(targetToScreenshot, cleanTarget, {
+          roundNum: roundOptions.roundNum,
+          resultWinner: roundOptions.resultWinner,
+          shoeNum: roundOptions.shoeNum,
+          isFullPage: false,
+          pageObj: page,
+          trimBlack: false,
+        }).catch(() => null);
+      }
+
       if (retryResult && retryResult.success) {
         result = retryResult;
-        console.log(`✅ [SCREENSHOT RECOVER SUCCESS] Đã chụp lại thành công ảnh bàn ${cleanTarget} sau khi Reload!`);
-      } else {
-        console.warn(`🔄 [SIGNAL RECOVER TABLE] Click Reload vẫn đen màn hình — Đang re-enter lại bàn ${cleanTarget} ngay lập tức...`);
-        await enterTable(cleanTarget, true).catch(() => {});
+        console.log(`✅ [SCREENSHOT RECOVER SUCCESS] Đã khôi phục video và chụp thành công ảnh bàn ${cleanTarget}!`);
       }
     }
 
