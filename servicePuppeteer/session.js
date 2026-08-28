@@ -2940,7 +2940,12 @@ async function enterTargetTable(
               break;
             }
           }
-          const probe = await probeEnteredTable(prefer);
+          let probe = { inRoom: false, table: null };
+          for (let pTry = 0; pTry < 6; pTry++) {
+            await helper.delay(1000);
+            probe = await probeEnteredTable(prefer);
+            if (probe.inRoom) break;
+          }
           if (probe.inRoom) {
             const landed = normTableCode(probe.detected || "");
             const want = normTableCode(prefer || clickedTableCode);
