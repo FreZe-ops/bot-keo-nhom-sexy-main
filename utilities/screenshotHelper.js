@@ -163,6 +163,48 @@ async function trimBlackBorders(filepath, threshold = 28, pad = 2, darkRatio = 0
 }
 
 /**
+ * Nhận diện màn hình bị "Tín hiệu bị mất" (vùng video ở nửa trên tối đen > 95%)
+ */
+async function isSignalLostScreenshot(filepath) {
+  try {
+    const { Jimp } = require("jimp");
+    const image = await Jimp.read(filepath);
+    const { data, width, height } = image.bitmap;
+    
+    // Kiểm tra vùng video stream (từ 10% đến 65% chiều cao, và từ 10% đến 90% chiều rộng)
+    const yStart = Math.floor(height * 0.10);
+    const yEnd = Math.floor(height * 0.65);
+    const xStart = Math.floor(width * 0.10);
+    const xEnd = Math.floor(width * 0.90);
+    
+    let totalSampled = 0;
+    let blackPixels = 0;
+    
+    for (let y = yStart; y < yEnd; y += 2) {
+      for (let x = xStart; x < xEnd; x += 2) {
+        const idx = (y * width + x) * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+        if (r < 25 && g < 25 && b < 25) {
+          blackPixels++;
+        }
+        totalSampled++;
+      }
+    }
+    
+    const blackRatio = totalSampled > 0 ? (blackPixels / totalSampled) : 0;
+    if (blackRatio >= 0.95) {
+      console.warn(`🚨 [SCREENSHOT SIGNAL LOST] Vùng video tối đen ${ (blackRatio * 100).toFixed(1) }% (ngưỡng 95%) -> Kích hoạt làm mới stream!`);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
  * Màn hình bị đá phiên của Sexy được vẽ trên canvas nên DOM không có text.
  * Nhận diện trực tiếp ảnh: nền gần như tối hoàn toàn + cụm chữ hồng/đỏ lớn.
  */
@@ -345,50 +387,7 @@ async function saveScreenshot(target, tableName = "UNKNOWN", options = {}) {
       return { success: false, error: "BLANK_CAPTURE" };
     }
 
-/**
- * Nhận diện màn hình bị "Tín hiệu bị mất" (vùng video ở nửa trên tối đen > 85%)
- */
-async function isSignalLostScreenshot(filepath) {
-  try {
-    const { Jimp } = require("jimp");
-    const image = await Jimp.read(filepath);
-    const { data, width, height } = image.bitmap;
-    
-    // Kiểm tra vùng video stream (từ 10% đến 65% chiều cao, và từ 10% đến 90% chiều rộng)
-    const yStart = Math.floor(height * 0.10);
-    const yEnd = Math.floor(height * 0.65);
-    const xStart = Math.floor(width * 0.10);
-    const xEnd = Math.floor(width * 0.90);
-    
-    let totalSampled = 0;
-    let blackPixels = 0;
-    
-    for (let y = yStart; y < yEnd; y += 2) {
-      for (let x = xStart; x < xEnd; x += 2) {
-        const idx = (y * width + x) * 4;
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-        // Đen kịt (r, g, b < 25)
-        if (r < 25 && g < 25 && b < 25) {
-          blackPixels++;
-        }
-        totalSampled++;
-      }
-    }
-    
-    const blackRatio = totalSampled > 0 ? (blackPixels / totalSampled) : 0;
-    if (blackRatio >= 0.95) {
-      console.warn(`🚨 [SCREENSHOT SIGNAL LOST] Vùng video tối đen ${ (blackRatio * 100).toFixed(1) }% (ngưỡng 95%) -> Kích hoạt làm mới stream!`);
-      return true;
-    }
-    return false;
-  } catch (err) {
-    return false;
-  }
-}
-
-    // Kiểm tra nếu ảnh bị đen màn hình / mất tín hiệu video
+    // Kiểm tra nếu ảnh bị đen màn hình / mất tín hiệu video (> 95% đen)
     if (await isSignalLostScreenshot(filepath)) {
       await fs.unlink(filepath).catch(() => {});
       return {
