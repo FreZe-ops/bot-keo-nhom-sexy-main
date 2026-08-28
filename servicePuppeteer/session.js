@@ -1894,6 +1894,7 @@ async function closeInTableModals(targetFrame) {
       await f.evaluate(() => {
         const badSelectors = [
           "#betLimitWrongSet", "div#betLimitWrongSet",
+          "#goHomeMaintenance", "div#goHomeMaintenance",
           "promo-widget", ".notification_closeBtn", "div.notification_closeBtn",
           ".tcg_modal_close", ".publicModal .tcg_modal_close", ".van-dialog"
         ];
