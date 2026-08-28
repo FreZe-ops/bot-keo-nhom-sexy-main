@@ -3495,10 +3495,9 @@ async function captureTableRound(tableName, roundOptions = {}) {
         `[SCREENSHOT FAIL] ${cleanTarget} reason=${result.error || result.reason || "unknown"} ` +
           `consecutive=${consecutiveCaptureFailures}`
       );
-      // Một fail được phép retry từ event BPT đang xếp hàng; hai fail liên tiếp
-      // chứng tỏ Firefox/page paint đã kẹt và cần browser mới.
-      if (consecutiveCaptureFailures >= 2) {
-        await recoverFromFatalUi("CAPTURE_FAILED_TWICE").catch((e) =>
+      // Không restart browser khi lỡ 1-2 ván chụp ảnh để giữ nguyên luồng WebRTC và bàn cược
+      if (consecutiveCaptureFailures >= 8) {
+        await recoverFromFatalUi("CAPTURE_FAILED_MULTIPLE").catch((e) =>
           console.error("[RECOVER CAPTURE]", e.message)
         );
       }
