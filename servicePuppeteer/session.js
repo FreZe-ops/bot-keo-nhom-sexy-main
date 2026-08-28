@@ -1295,9 +1295,10 @@ async function reserveTableOnServer(tableName) {
   if (!key) return false;
   try {
     const serverPort = process.env.SERVER_PORT || 3201;
+    const ns = String(nameServiceSocket || account?.nameServiceSocket || `NS${process.env.ACCOUNT_INDEX || 1}`).trim().toUpperCase();
     await axios.post(`http://localhost:${serverPort}/api/reserve-table`, {
       tableName: key,
-      nameService: nameServiceSocket,
+      nameService: ns,
     });
     return true;
   } catch (e) {
@@ -1322,17 +1323,18 @@ async function notifyActiveTableToServer(tableName) {
 
   try {
     const serverPort = process.env.SERVER_PORT || 3201;
+    const ns = String(nameServiceSocket || account?.nameServiceSocket || `NS${process.env.ACCOUNT_INDEX || 1}`).trim().toUpperCase();
     await axios.post(`http://localhost:${serverPort}/api/notify-active-table`, {
       tableName: key,
-      nameService: nameServiceSocket,
+      nameService: ns,
     });
     lastSessionProgressAt = Date.now();
     sessionInTableReady = true;
     sessionRecovering = false;
     if (shouldLogReady) {
-      console.log(`✅ [API NOTIFY] active_table=${key} → bot có thể hô`);
+      console.log(`✅ [API NOTIFY] active_table=${key} (${ns}) → bot có thể hô`);
       await helper.appendToLog(
-        `✅ [API NOTIFY] Đã vào bàn → báo bot hô: active_table=${key}`,
+        `✅ [API NOTIFY] Đã vào bàn → báo bot hô: active_table=${key} (${ns})`,
         logsNameProgress
       );
     }
