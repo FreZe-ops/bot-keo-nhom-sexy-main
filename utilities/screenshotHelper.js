@@ -378,8 +378,8 @@ async function isSignalLostScreenshot(filepath) {
     }
     
     const blackRatio = totalSampled > 0 ? (blackPixels / totalSampled) : 0;
-    if (blackRatio >= 0.85) {
-      console.warn(`🚨 [SCREENSHOT SIGNAL LOST] Vùng video tối đen ${ (blackRatio * 100).toFixed(1) }% (ngưỡng 85%) -> Kích hoạt làm mới stream!`);
+    if (blackRatio >= 0.95) {
+      console.warn(`🚨 [SCREENSHOT SIGNAL LOST] Vùng video tối đen ${ (blackRatio * 100).toFixed(1) }% (ngưỡng 95%) -> Kích hoạt làm mới stream!`);
       return true;
     }
     return false;
