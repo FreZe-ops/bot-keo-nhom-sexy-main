@@ -2207,9 +2207,8 @@ async function probeEnteredTable(fallbackCode = null) {
     });
   } catch (_) {}
   const fallback = fallbackCode ? normTableCode(fallbackCode) : null;
-  const table = detected || ((inDom || hasTableFrame) ? fallback : null);
-  // Cookie chỉ để log chẩn đoán. Phải có DOM bàn, iframe bàn, hoặc mã bàn trong DOM.
-  const inRoom = !!(inDom || detected || hasTableFrame);
+  const table = detected || fallback || cookie || ((inDom || hasTableFrame) ? fallback : null);
+  const inRoom = !!(inDom || detected || hasTableFrame || cookie || fallback);
   return { inRoom, table: table || null, inDom, detected, cookie, hasTableFrame };
 }
 
