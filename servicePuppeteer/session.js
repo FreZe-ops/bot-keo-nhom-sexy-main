@@ -3418,7 +3418,11 @@ async function captureTableRound(tableName, roundOptions = {}) {
 
       if (!retryResult || !retryResult.success) {
         console.warn(`[SCREENSHOT RECOVER] Click Reload chưa hết đen — Đang Re-enter lại bàn ${cleanTarget} để khôi phục WebRTC...`);
-        await enterTable(cleanTarget, true).catch(() => {});
+        await goHomeToLobby().catch(() => {});
+        currentInTable = null;
+        sessionInTableReady = false;
+        await helper.delay(1000);
+        await enterTargetTable(gameHallFrame || seamlessFrame || page, cleanTarget, true).catch(() => {});
         await helper.delay(2500);
 
         retryResult = await screenshotHelper.saveScreenshot(targetToScreenshot, cleanTarget, {
