@@ -1798,17 +1798,24 @@ async function handleInTableSignalLost() {
     await clickSignalLostReload().catch(() => false);
   } else {
     // Lần 2 trở đi nếu click không ăn: Re-enter lại bàn cược để tái tạo luồng video sạch
-    console.log(
-      `🔄 [SIGNAL RECOVER] Click Reload không ăn — Đang re-enter lại bàn ${currentInTable}...`
-    );
-    await enterTable(currentInTable, true).catch(() => {});
+    if (currentInTable && currentInTable !== "NONE" && currentInTable !== "LOBBY") {
+      const targetTable = currentInTable;
+      console.log(
+        `🔄 [SIGNAL RECOVER] Click Reload không ăn — Đang re-enter lại bàn ${targetTable}...`
+      );
+      await goHomeToLobby().catch(() => {});
+      currentInTable = null;
+      sessionInTableReady = false;
+      await helper.delay(1000);
+      await enterTargetTable(gameHallFrame || seamlessFrame || page, targetTable, true).catch(() => {});
+    }
     signalReloadAttempts = 0;
   }
 
   return true;
 }
 
-// Active Watchdog: Tự động kiểm tra và bấm [Làm mới / Reload] ngay trong vòng 2-3s nếu phát hiện "Tín hiệu bị mất"
+// Active Watchdog: Chỉ bấm Reload khi PHÁT HIỆN THẬT "Tín hiệu bị mất"
 setInterval(async () => {
   if (
     sessionInTableReady &&
@@ -1820,18 +1827,12 @@ setInterval(async () => {
     !resetInFlight
   ) {
     try {
-      await handleInTableSignalLost();
+      if (await detectSignalLost().catch(() => false)) {
+        await handleInTableSignalLost();
+      }
     } catch (_) {}
   }
 }, 3000);
-
-// Tự động bấm [🔄 Làm mới / Reload] định kỳ mỗi 30 GIÂY để video stream luôn mượt mà và không bao giờ bị mất tín hiệu
-setInterval(async () => {
-  if (sessionInTableReady && currentInTable && currentInTable !== "NONE" && page && !page.isClosed()) {
-    console.log(`🔄 [PROACTIVE RELOAD STREAM] Định kỳ 30s bấm Reload bàn ${currentInTable} giữ tín hiệu video...`);
-    await clickSignalLostReload().catch(() => {});
-  }
-}, 30000);
 
 async function detectFatalUiError() {
   if (!page || page.isClosed()) return "PAGE_CLOSED";
