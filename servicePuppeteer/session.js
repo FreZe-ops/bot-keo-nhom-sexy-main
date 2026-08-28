@@ -2189,11 +2189,9 @@ async function isReallyInTableRoom() {
   return false;
 }
 
-/** Đã vào phòng? — nới hơn isReallyInTableRoom (cookie / #currentGameTable / iframe bàn) */
+/** Đã vào phòng? — Phải có DOM bàn, iframe bàn, hoặc mã bàn trong DOM */
 async function probeEnteredTable(fallbackCode = null) {
   const detected = await detectCurrentTableInRoom().catch(() => null);
-  const cookie = await withTimeout(detectTableFromCookie(), 2000, null);
-  const inDom = await isReallyInTableRoom().catch(() => false);
   let hasTableFrame = false;
   try {
     hasTableFrame = (page.frames() || []).some((f) => {
@@ -2206,10 +2204,9 @@ async function probeEnteredTable(fallbackCode = null) {
       }
     });
   } catch (_) {}
-  const fallback = fallbackCode ? normTableCode(fallbackCode) : null;
-  const table = detected || fallback || cookie || ((inDom || hasTableFrame) ? fallback : null);
-  const inRoom = !!(inDom || detected || hasTableFrame || cookie || fallback);
-  return { inRoom, table: table || null, inDom, detected, cookie, hasTableFrame };
+  const inRoom = !!(detected || hasTableFrame);
+  const table = detected || (hasTableFrame && fallbackCode ? normTableCode(fallbackCode) : null);
+  return { inRoom, table: table || null, detected, hasTableFrame };
 }
 
 /** Click .notification_closeBtn sau khi vào bàn */
@@ -3321,6 +3318,12 @@ async function captureTableRound(tableName, roundOptions = {}) {
     if (!currentInTable || currentInTable === "NONE" || currentInTable === "LOBBY") {
       console.log(`[SCREENSHOT CANCELLED] Chưa ở trong bàn cược thực tế nào, hủy chụp!`);
       return { success: false, reason: "NOT_IN_TABLE" };
+    }
+
+    const probeCheck = await probeEnteredTable(tableName || currentInTable);
+    if (!probeCheck.inRoom) {
+      console.warn(`[SCREENSHOT CANCELLED] Session đang ở sảnh chờ hoặc chưa xác định mã bàn thực tế, hủy chụp để tránh chụp sảnh!`);
+      return { success: false, reason: "NOT_IN_ROOM_LOBBY" };
     }
 
     const cleanTarget = String(tableName || currentInTable).trim().toUpperCase();
