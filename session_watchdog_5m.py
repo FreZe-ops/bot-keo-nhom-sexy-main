@@ -38,8 +38,6 @@ def restart_session(ns):
     except Exception as e:
         log(f"  -> Loi restart {s_name}: {e}")
 
-session_not_in_table_count = {}
-
 def check_and_heal():
     for ns in ['NS1', 'NS2', 'NS3', 'NS4']:
         try:
@@ -52,16 +50,9 @@ def check_and_heal():
                 
                 # Nếu không ở trong bàn hoặc bị pause
                 if not table or table in ('NONE', 'LOBBY') or paused:
-                    count = session_not_in_table_count.get(ns, 0) + 1
-                    session_not_in_table_count[ns] = count
-                    log(f"⚠️ {ns}: Chua vao ban (lan {count}/4, table={table}, paused={paused})")
-                    if count >= 4: # Cho phep toi thieu 3 phut de login va load sanh truoc khi restart
-                        log(f"🚨 {ns}: Qua 3 phut chua vao ban -> Restart {ns}")
-                        session_not_in_table_count[ns] = 0
-                        restart_session(ns)
+                    log(f"⚠️ {ns}: Chua vao ban hoac paused (table={table}, paused={paused}) -> Restart {ns}")
+                    restart_session(ns)
                     continue
-                else:
-                    session_not_in_table_count[ns] = 0
                 
                 # Kiểm tra độ mới của ảnh chụp bàn
                 shot_url = f"{API_BASE_URL}/api/latest-screenshot?tableName={urllib.parse.quote(str(table))}"
@@ -77,12 +68,7 @@ def check_and_heal():
             log(f"⚠️ Loi kiem tra session {ns}: {e}")
 
 def check_bot_services():
-    services = [
-        'BCR-server',
-        'BCR-session1', 'BCR-session2', 'BCR-session3', 'BCR-session4',
-        'BCR-bot1', 'BCR-bot2', 'BCR-bot3', 'BCR-bot4',
-        'BCR-forward-bot'
-    ]
+    services = ['BCR-bot1', 'BCR-bot2', 'BCR-bot3', 'BCR-bot4', 'BCR-forward-bot', 'BCR-server']
     for s in services:
         try:
             res = subprocess.run(f'"{NSSM}" status {s}', capture_output=True, text=True, shell=True, timeout=10)

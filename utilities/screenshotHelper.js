@@ -163,94 +163,6 @@ async function trimBlackBorders(filepath, threshold = 28, pad = 2, darkRatio = 0
 }
 
 /**
- * Nhận diện màn hình bị "Tín hiệu bị mất" (vùng video ở nửa trên tối đen > 95%)
- */
-async function isSignalLostScreenshot(filepath) {
-  try {
-    const { Jimp } = require("jimp");
-    const image = await Jimp.read(filepath);
-    const { data, width, height } = image.bitmap;
-    
-    // Kiểm tra vùng video stream (từ 10% đến 65% chiều cao, và từ 10% đến 90% chiều rộng)
-    const yStart = Math.floor(height * 0.10);
-    const yEnd = Math.floor(height * 0.65);
-    const xStart = Math.floor(width * 0.10);
-    const xEnd = Math.floor(width * 0.90);
-    
-    let totalSampled = 0;
-    let blackPixels = 0;
-    
-    for (let y = yStart; y < yEnd; y += 2) {
-      for (let x = xStart; x < xEnd; x += 2) {
-        const idx = (y * width + x) * 4;
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-        if (r < 25 && g < 25 && b < 25) {
-          blackPixels++;
-        }
-        totalSampled++;
-      }
-    }
-    
-    const blackRatio = totalSampled > 0 ? (blackPixels / totalSampled) : 0;
-    if (blackRatio >= 0.95) {
-      console.warn(`🚨 [SCREENSHOT SIGNAL LOST] Vùng video tối đen ${ (blackRatio * 100).toFixed(1) }% (ngưỡng 95%) -> Kích hoạt làm mới stream!`);
-      return true;
-    }
-    return false;
-  } catch (err) {
-    return false;
-  }
-}
-
-/**
- * Nhận diện ảnh chụp nhầm sảnh chờ (Lobby / Truyền thống) thay vì bàn cược thật
- */
-async function isLobbyScreenshot(filepath) {
-  try {
-    const { Jimp } = require("jimp");
-    const image = await Jimp.read(filepath);
-    const { data, width, height } = image.bitmap;
-    
-    // Kiểm tra góc trái trên (nơi logo Sexy và thanh Category Sảnh nằm: x < 15% width, y < 40% height)
-    const xMax = Math.floor(width * 0.15);
-    const yMax = Math.floor(height * 0.40);
-    
-    let pinkLogoPixels = 0;
-    let darkSidebarPixels = 0;
-    let totalSampled = 0;
-    
-    for (let y = 0; y < yMax; y += 2) {
-      for (let x = 0; x < xMax; x += 2) {
-        const idx = (y * width + x) * 4;
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-        
-        // Màu hồng logo Sexy (r > 190, g < 100, b > 100)
-        if (r > 190 && g < 100 && b > 100) {
-          pinkLogoPixels++;
-        }
-        // Màu nền sidebar đỏ đô sảnh (r: 25-90, g < 40, b < 60)
-        if (r > 25 && r < 90 && g < 40 && b < 60) {
-          darkSidebarPixels++;
-        }
-        totalSampled++;
-      }
-    }
-    
-    if (totalSampled > 0 && darkSidebarPixels / totalSampled > 0.45 && pinkLogoPixels >= 10) {
-      console.warn(`🚨 [SCREENSHOT LOBBY DETECTED] Phát hiện chụp nhầm SẢNH LOBBY (sidebar=${((darkSidebarPixels/totalSampled)*100).toFixed(1)}%, pink=${pinkLogoPixels}) -> HỦY BỎ ẢNH SẢNH!`);
-      return true;
-    }
-    return false;
-  } catch (_) {
-    return false;
-  }
-}
-
-/**
  * Màn hình bị đá phiên của Sexy được vẽ trên canvas nên DOM không có text.
  * Nhận diện trực tiếp ảnh: nền gần như tối hoàn toàn + cụm chữ hồng/đỏ lớn.
  */
@@ -433,15 +345,13 @@ async function saveScreenshot(target, tableName = "UNKNOWN", options = {}) {
       return { success: false, error: "BLANK_CAPTURE" };
     }
 
-    // Kiểm tra nếu ảnh bị đen màn hình / mất tín hiệu video (> 95% đen)
-    if (await isSignalLostScreenshot(filepath)) {
-      await fs.unlink(filepath).catch(() => {});
-      return {
-        success: false,
-        fatalUi: "SIGNAL_LOST",
-        error: "SIGNAL_LOST_BLACK_SCREEN",
-      };
-    }
+/**
+ * Nhận diện màn hình bị "Tín hiệu bị mất" (vùng video ở giữa tối đen > 80%)
+ */
+async function isSignalLostScreenshot(filepath) {
+  // Đã tắt kiểm tra tối màu pixel để tránh nhận nhầm bàn nền tối/dealer đổi bài là mất tín hiệu
+  return false;
+}
 
     // Không bao giờ lưu/gửi ảnh overlay kick. Xóa file ngay và báo session restart.
     if (await isFatalSessionScreenshot(filepath)) {
@@ -450,15 +360,6 @@ async function saveScreenshot(target, tableName = "UNKNOWN", options = {}) {
         success: false,
         fatalUi: "SESSION_EXPIRED",
         error: "SESSION_EXPIRED_CANVAS",
-      };
-    }
-
-    // Không bao giờ lưu/gửi ảnh chụp SẢNH LOBBY. Xóa file ngay!
-    if (await isLobbyScreenshot(filepath)) {
-      await fs.unlink(filepath).catch(() => {});
-      return {
-        success: false,
-        error: "LOBBY_CAPTURE_REJECTED",
       };
     }
 

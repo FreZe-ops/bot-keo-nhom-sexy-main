@@ -1295,10 +1295,9 @@ async function reserveTableOnServer(tableName) {
   if (!key) return false;
   try {
     const serverPort = process.env.SERVER_PORT || 3201;
-    const ns = String(nameServiceSocket || account?.nameServiceSocket || `NS${process.env.ACCOUNT_INDEX || 1}`).trim().toUpperCase();
     await axios.post(`http://localhost:${serverPort}/api/reserve-table`, {
       tableName: key,
-      nameService: ns,
+      nameService: nameServiceSocket,
     });
     return true;
   } catch (e) {
@@ -1323,18 +1322,17 @@ async function notifyActiveTableToServer(tableName) {
 
   try {
     const serverPort = process.env.SERVER_PORT || 3201;
-    const ns = String(nameServiceSocket || account?.nameServiceSocket || `NS${process.env.ACCOUNT_INDEX || 1}`).trim().toUpperCase();
     await axios.post(`http://localhost:${serverPort}/api/notify-active-table`, {
       tableName: key,
-      nameService: ns,
+      nameService: nameServiceSocket,
     });
     lastSessionProgressAt = Date.now();
     sessionInTableReady = true;
     sessionRecovering = false;
     if (shouldLogReady) {
-      console.log(`✅ [API NOTIFY] active_table=${key} (${ns}) → bot có thể hô`);
+      console.log(`✅ [API NOTIFY] active_table=${key} → bot có thể hô`);
       await helper.appendToLog(
-        `✅ [API NOTIFY] Đã vào bàn → báo bot hô: active_table=${key} (${ns})`,
+        `✅ [API NOTIFY] Đã vào bàn → báo bot hô: active_table=${key}`,
         logsNameProgress
       );
     }
@@ -1593,12 +1591,22 @@ async function detectSignalLost() {
           const needles = [
             "tin hieu bi mat",
             "tín hiệu bị mất",
+            "tin hieu",
+            "tín hiệu",
+            "bi mat",
+            "bị mất",
+            "mat ket noi",
+            "mất kết nối",
             "vui long lam moi",
             "vui lòng làm mới",
+            "lam moi",
+            "làm mới",
             "signal lost",
             "video signal lost",
             "mat ket noi video",
             "mất kết nối video",
+            "disconnected",
+            "reconnect",
           ].map(norm);
 
           const fullText = norm(
@@ -1609,11 +1617,19 @@ async function detectSignalLost() {
           }
 
           const nodes = document.querySelectorAll(
-            "div, span, p, section, [class*='error'], [class*='signal'], [class*='mask']"
+            "div, span, p, section, aside, button, label, [class*='error'], [class*='signal'], [class*='mask'], [class*='video']"
           );
           for (const el of nodes) {
             const txt = norm(el.innerText || el.textContent || "");
             if (needles.some((n) => txt.includes(n))) {
+              return true;
+            }
+          }
+
+          // Kiểm tra thẻ video: nếu video bị đứng hoặc lỗi
+          const vids = document.querySelectorAll("video");
+          for (const v of vids) {
+            if (v && (v.paused || v.ended || v.error)) {
               return true;
             }
           }
@@ -1780,24 +1796,17 @@ async function handleInTableSignalLost() {
     await clickSignalLostReload().catch(() => false);
   } else {
     // Lần 2 trở đi nếu click không ăn: Re-enter lại bàn cược để tái tạo luồng video sạch
-    if (currentInTable && currentInTable !== "NONE" && currentInTable !== "LOBBY") {
-      const targetTable = currentInTable;
-      console.log(
-        `🔄 [SIGNAL RECOVER] Click Reload không ăn — Đang re-enter lại bàn ${targetTable}...`
-      );
-      await goHomeToLobby().catch(() => {});
-      currentInTable = null;
-      sessionInTableReady = false;
-      await helper.delay(1000);
-      await enterTargetTable(gameHallFrame || seamlessFrame || page, targetTable, true).catch(() => {});
-    }
+    console.log(
+      `🔄 [SIGNAL RECOVER] Click Reload không ăn — Đang re-enter lại bàn ${currentInTable}...`
+    );
+    await enterTable(currentInTable, true).catch(() => {});
     signalReloadAttempts = 0;
   }
 
   return true;
 }
 
-// Active Watchdog: Chỉ bấm Reload khi PHÁT HIỆN THẬT "Tín hiệu bị mất"
+// Active Watchdog: Tự động kiểm tra và bấm [Làm mới / Reload] ngay trong vòng 2-3s nếu phát hiện "Tín hiệu bị mất"
 setInterval(async () => {
   if (
     sessionInTableReady &&
@@ -1809,12 +1818,18 @@ setInterval(async () => {
     !resetInFlight
   ) {
     try {
-      if (await detectSignalLost().catch(() => false)) {
-        await handleInTableSignalLost();
-      }
+      await handleInTableSignalLost();
     } catch (_) {}
   }
 }, 3000);
+
+// Tự động bấm [🔄 Làm mới / Reload] định kỳ mỗi 30 GIÂY để video stream luôn mượt mà và không bao giờ bị mất tín hiệu
+setInterval(async () => {
+  if (sessionInTableReady && currentInTable && currentInTable !== "NONE" && page && !page.isClosed()) {
+    console.log(`🔄 [PROACTIVE RELOAD STREAM] Định kỳ 30s bấm Reload bàn ${currentInTable} giữ tín hiệu video...`);
+    await clickSignalLostReload().catch(() => {});
+  }
+}, 30000);
 
 async function detectFatalUiError() {
   if (!page || page.isClosed()) return "PAGE_CLOSED";
@@ -1894,7 +1909,6 @@ async function closeInTableModals(targetFrame) {
       await f.evaluate(() => {
         const badSelectors = [
           "#betLimitWrongSet", "div#betLimitWrongSet",
-          "#goHomeMaintenance", "div#goHomeMaintenance",
           "promo-widget", ".notification_closeBtn", "div.notification_closeBtn",
           ".tcg_modal_close", ".publicModal .tcg_modal_close", ".van-dialog"
         ];
@@ -2189,9 +2203,11 @@ async function isReallyInTableRoom() {
   return false;
 }
 
-/** Đã vào phòng? — Phải có DOM bàn, iframe bàn, hoặc mã bàn trong DOM */
+/** Đã vào phòng? — nới hơn isReallyInTableRoom (cookie / #currentGameTable / iframe bàn) */
 async function probeEnteredTable(fallbackCode = null) {
   const detected = await detectCurrentTableInRoom().catch(() => null);
+  const cookie = await withTimeout(detectTableFromCookie(), 2000, null);
+  const inDom = await isReallyInTableRoom().catch(() => false);
   let hasTableFrame = false;
   try {
     hasTableFrame = (page.frames() || []).some((f) => {
@@ -2204,9 +2220,11 @@ async function probeEnteredTable(fallbackCode = null) {
       }
     });
   } catch (_) {}
-  const inRoom = !!(detected || hasTableFrame);
-  const table = detected || (hasTableFrame && fallbackCode ? normTableCode(fallbackCode) : null);
-  return { inRoom, table: table || null, detected, hasTableFrame };
+  const fallback = fallbackCode ? normTableCode(fallbackCode) : null;
+  const table = detected || ((inDom || hasTableFrame) ? fallback : null);
+  // Cookie chỉ để log chẩn đoán. Phải có DOM bàn, iframe bàn, hoặc mã bàn trong DOM.
+  const inRoom = !!(inDom || detected || hasTableFrame);
+  return { inRoom, table: table || null, inDom, detected, cookie, hasTableFrame };
 }
 
 /** Click .notification_closeBtn sau khi vào bàn */
@@ -2936,12 +2954,7 @@ async function enterTargetTable(
               break;
             }
           }
-          let probe = { inRoom: false, table: null };
-          for (let pTry = 0; pTry < 6; pTry++) {
-            await helper.delay(1000);
-            probe = await probeEnteredTable(prefer);
-            if (probe.inRoom) break;
-          }
+          const probe = await probeEnteredTable(prefer);
           if (probe.inRoom) {
             const landed = normTableCode(probe.detected || "");
             const want = normTableCode(prefer || clickedTableCode);
@@ -3320,12 +3333,6 @@ async function captureTableRound(tableName, roundOptions = {}) {
       return { success: false, reason: "NOT_IN_TABLE" };
     }
 
-    const probeCheck = await probeEnteredTable(tableName || currentInTable);
-    if (!probeCheck.inRoom) {
-      console.warn(`[SCREENSHOT CANCELLED] Session đang ở sảnh chờ hoặc chưa xác định mã bàn thực tế, hủy chụp để tránh chụp sảnh!`);
-      return { success: false, reason: "NOT_IN_ROOM_LOBBY" };
-    }
-
     const cleanTarget = String(tableName || currentInTable).trim().toUpperCase();
 
     const fatalUi = await detectFatalUiError().catch(() => null);
@@ -3392,13 +3399,13 @@ async function captureTableRound(tableName, roundOptions = {}) {
       return { success: false, reason: "CAPTURE_TIMEOUT" };
     }
 
-    // 2. Xử lý khi ảnh bị mất tín hiệu video -> Click Reload và Re-enter bàn để tái tạo luồng video sạch
+    // 2. Xử lý khi ảnh bị mất tín hiệu video -> Tự động bấm Reload nhẹ nhàng và tiếp tục ở lại bàn
     if (result?.fatalUi === "SIGNAL_LOST") {
-      console.warn(`[SCREENSHOT RECOVER] Bàn ${cleanTarget} phát hiện SIGNAL_LOST (màn hình đen) — Đang click Reload...`);
+      console.warn(`[SCREENSHOT RECOVER] Bàn ${cleanTarget} phát hiện SIGNAL_LOST — Đang click Reload...`);
       await clickSignalLostReload();
-      await helper.delay(1200);
+      await helper.delay(1000);
 
-      let retryResult = await screenshotHelper.saveScreenshot(targetToScreenshot, cleanTarget, {
+      const retryResult = await screenshotHelper.saveScreenshot(targetToScreenshot, cleanTarget, {
         roundNum: roundOptions.roundNum,
         resultWinner: roundOptions.resultWinner,
         shoeNum: roundOptions.shoeNum,
@@ -3407,28 +3414,9 @@ async function captureTableRound(tableName, roundOptions = {}) {
         trimBlack: false,
       }).catch(() => null);
 
-      if (!retryResult || !retryResult.success) {
-        console.warn(`[SCREENSHOT RECOVER] Click Reload chưa hết đen — Đang Re-enter lại bàn ${cleanTarget} để khôi phục WebRTC...`);
-        await goHomeToLobby().catch(() => {});
-        currentInTable = null;
-        sessionInTableReady = false;
-        await helper.delay(1000);
-        await enterTargetTable(gameHallFrame || seamlessFrame || page, cleanTarget, true).catch(() => {});
-        await helper.delay(2500);
-
-        retryResult = await screenshotHelper.saveScreenshot(targetToScreenshot, cleanTarget, {
-          roundNum: roundOptions.roundNum,
-          resultWinner: roundOptions.resultWinner,
-          shoeNum: roundOptions.shoeNum,
-          isFullPage: false,
-          pageObj: page,
-          trimBlack: false,
-        }).catch(() => null);
-      }
-
       if (retryResult && retryResult.success) {
         result = retryResult;
-        console.log(`✅ [SCREENSHOT RECOVER SUCCESS] Đã khôi phục video và chụp thành công ảnh bàn ${cleanTarget}!`);
+        console.log(`✅ [SCREENSHOT RECOVER SUCCESS] Đã chụp lại thành công ảnh bàn ${cleanTarget} sau khi Reload!`);
       }
     }
 
@@ -3486,9 +3474,10 @@ async function captureTableRound(tableName, roundOptions = {}) {
         `[SCREENSHOT FAIL] ${cleanTarget} reason=${result.error || result.reason || "unknown"} ` +
           `consecutive=${consecutiveCaptureFailures}`
       );
-      // Không restart browser khi lỡ 1-2 ván chụp ảnh để giữ nguyên luồng WebRTC và bàn cược
-      if (consecutiveCaptureFailures >= 8) {
-        await recoverFromFatalUi("CAPTURE_FAILED_MULTIPLE").catch((e) =>
+      // Một fail được phép retry từ event BPT đang xếp hàng; hai fail liên tiếp
+      // chứng tỏ Firefox/page paint đã kẹt và cần browser mới.
+      if (consecutiveCaptureFailures >= 2) {
+        await recoverFromFatalUi("CAPTURE_FAILED_TWICE").catch((e) =>
           console.error("[RECOVER CAPTURE]", e.message)
         );
       }

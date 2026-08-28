@@ -1,0 +1,222 @@
+[2026-08-26 12:01:44][MINH (@MINHQUAN68799) - THẬT 1000] Đã hô lệnh (🔵 CON 1000). Chờ cố định 20s cho ván bài bàn C08 chia và lật bài xong...
+[2026-08-26 12:01:51][BOT] [WAIT RESULT] Đã nhận ảnh chụp thật ván vừa cược bàn C06: sexy_C06_R3_WP_2026-08-26T05-01-49-130Z.png | Kết quả mở: P (sau 10.2s)
+[2026-08-26 12:01:51][Trâm Anh (@tramanhvip86) - 5000] Đang gửi ảnh kết quả thật: sexy_C06_R3_WP_2026-08-26T05-01-49-130Z.png...
+[2026-08-26 12:01:53][Trâm Anh (@tramanhvip86) - 5000] ✅ Đã gửi ảnh kết quả thật bàn C06: sexy_C06_R3_WP_2026-08-26T05-01-49-130Z.png
+[2026-08-26 12:02:00][MINH (@MINHQUAN68799) - ẢO 1000] Đang gửi ảnh kết quả (WIN): photo_8_2025-10-17_14-59-05.jpg...
+[2026-08-26 12:02:01][Trâm Anh - 1 Lệnh Chuẩn] Đang lấy ảnh kết quả thật vừa mở thưởng bàn C06...
+[2026-08-26 12:02:01][MINH (@MINHQUAN68799) - ẢO 1000] ✅ Đã gửi ảnh kết quả ảo: photo_8_2025-10-17_14-59-05.jpg
+[2026-08-26 12:02:04][MINH (@MINHQUAN68799) - THẬT 1000] Đang lấy ảnh kết quả thật vừa mở thưởng bàn C08...
+[2026-08-26 12:02:13][Trâm Anh (@tramanhvip86) - 5000] [XÁC ĐỊNH KẾT QUẢ] Kèo hô=🔵 CON 5000 (P) | Bàn mở ra=P | Trả tin: 🎉 Húp +5000
+[2026-08-26 12:02:13][Trâm Anh (@tramanhvip86) - 5000] Đã gửi tin KẾT QUẢ (Ván bàn C06 ra P): 🎉 Húp +5000
+[2026-08-26 12:02:21][MINH (@MINHQUAN68799) - ẢO 1000] [XÁC ĐỊNH KẾT QUẢ ẢO] Kèo hô=🔴 CÁI 1000 | Outcome=WIN | Trả tin: 🎉 Húp +1000
+[2026-08-26 12:02:21][MINH (@MINHQUAN68799) - ẢO 1000] Đã gửi tin KẾT QUẢ ẢO (WIN): 🎉 Húp +1000: 🎉 Húp +1000
+[2026-08-26 12:02:25][BOT] [WAIT RESULT] Đã nhận ảnh chụp thật ván vừa cược bàn C06: sexy_C06_R4_WP_2026-08-26T05-02-23-619Z.png | Kết quả mở: P (sau 24.1s)
+[2026-08-26 12:02:25][Trâm Anh - 1 Lệnh Chuẩn] Đang gửi ảnh kết quả thật: sexy_C06_R4_WP_2026-08-26T05-02-23-619Z.png...
+[2026-08-26 12:02:27][Trâm Anh - 1 Lệnh Chuẩn] ✅ Đã gửi ảnh kết quả thật bàn C06: sexy_C06_R4_WP_2026-08-26T05-02-23-619Z.png
+[2026-08-26 12:02:30][BOT] [WAIT RESULT] Đã nhận ảnh chụp thật ván vừa cược bàn C08: sexy_C08_R66_WB_2026-08-26T05-02-29-561Z.png | Kết quả mở: B (sau 26.4s)
+[2026-08-26 12:02:30][MINH (@MINHQUAN68799) - THẬT 1000] Đang gửi ảnh kết quả thật: sexy_C08_R66_WB_2026-08-26T05-02-29-561Z.png...
+[2026-08-26 12:02:32][MINH (@MINHQUAN68799) - THẬT 1000] ✅ Đã gửi ảnh kết quả thật bàn C08: sexy_C08_R66_WB_2026-08-26T05-02-29-561Z.png
+[2026-08-26 12:02:33][Trâm Anh (@tramanhvip86) - 5000] Tin kết thúc (tin thứ 4, index 3) (msg_id=115964, index=3)
+[2026-08-26 12:02:41][MINH (@MINHQUAN68799) - ẢO 1000] Tin kết thúc (tin thứ 3, index 2) (msg_id=1148, index=2)
+[2026-08-26 12:02:47][Trâm Anh - 1 Lệnh Chuẩn] [XÁC ĐỊNH KẾT QUẢ] Kèo hô=🔵 CON (P) | Bàn mở ra=P | Trả tin: 🎉 Húp +10%
+[2026-08-26 12:02:47][Trâm Anh - 1 Lệnh Chuẩn] Đã gửi tin KẾT QUẢ (Ván bàn C06 ra P): 🎉 Húp +10%
+[2026-08-26 12:02:52][MINH (@MINHQUAN68799) - THẬT 1000] [XÁC ĐỊNH KẾT QUẢ] Kèo hô=🔵 CON 1000 (P) | Bàn mở ra=B | Trả tin: ❌ Thua -1000
+[2026-08-26 12:02:53][MINH (@MINHQUAN68799) - THẬT 1000] Đã gửi tin KẾT QUẢ (Ván bàn C08 ra B): ❌ Thua -1000
+[2026-08-26 12:02:53][Trâm Anh (@tramanhvip86) - 5000] Tin kết thúc (tin thứ 5, index 4) (msg_id=115965, index=4)
+[2026-08-26 12:03:01][MINH (@MINHQUAN68799) - ẢO 1000] HOÀN THÀNH CA ẢO CHO NHÓM (-1003917889129) THÀNH CÔNG!
+
+[2026-08-26 12:03:07][Trâm Anh - 1 Lệnh Chuẩn] Tin kết thúc (tin thứ 5, index 4) (msg_id=57514, index=4)
+[2026-08-26 12:03:13][MINH (@MINHQUAN68799) - THẬT 1000] Tin kết thúc (tin thứ 3, index 2) (msg_id=1148, index=2)
+[2026-08-26 12:03:13][Trâm Anh (@tramanhvip86) - 5000] HOÀN THÀNH CA CHO NHÓM (-1002574891758) THEO BÀN C06 THÀNH CÔNG!
+
+[2026-08-26 12:03:27][Trâm Anh - 1 Lệnh Chuẩn] HOÀN THÀNH CA CHO NHÓM (-1002680363714) THEO BÀN C06 THÀNH CÔNG!
+
+[2026-08-26 12:03:33][MINH (@MINHQUAN68799) - THẬT 1000] HOÀN THÀNH CA CHO NHÓM (-1003985026080) THEO BÀN C08 THÀNH CÔNG!
+
+🎯 ACTIVE TABLE READY: C06 (NS2) @ 1787720710028
+   occupied: [{"nameService":"NS3","tableName":"C05","ready":true},{"nameService":"NS4","tableName":"C08","ready":true},{"nameService":"NS2","tableName":"C06","ready":true}]
+==================================================
+
+2026-08-26 12:05:10 ✅ Đã thêm 1 round mới vào C21, bắt đầu từ id = 17
+[SOCKET EMIT] new_round_completed C21 winner=T status=GP_ONE_CARD_DRAWN
+2026-08-26 12:05:10 ✅ Đã thêm 1 round mới vào C15, bắt đầu từ id = 65
+[SOCKET EMIT] new_round_completed C15 winner=B status=GP_ONE_CARD_DRAWN
+[SOCKET EMIT] fe_result_visible C08 winner=- (FE ra kết quả)
+[SOCKET EMIT] fe_result_visible C21 winner=- (FE ra kết quả)
+[SOCKET EMIT] fe_result_visible C15 winner=- (FE ra kết quả)
+[SOCKET EMIT] fe_result_visible C01 winner=- (FE ra kết quả)
+[SOCKET EMIT] fe_result_visible C08 winner=- (FE ra kết quả)
+[SOCKET EMIT] fe_result_visible C09 winner=- (FE ra kết quả)
+2026-08-26 12:05:16 ✅ Đã thêm 1 round mới vào C01, bắt đầu từ id = 23
+[SOCKET EMIT] new_round_completed C01 winner=T status=GP_WINNER
+2026-08-26 12:05:16 ✅ Đã thêm 1 round mới vào C08, bắt đầu từ id = 29
+[SOCKET EMIT] new_round_completed C08 winner=T status=GP_WINNER
+[SOCKET EMIT] fe_result_visible C14 winner=- (FE ra kết quả)
+[API PLACE BET] Bot đặt cược bàn C05 (NS3) -> CÁI (amount=100)
+2026-08-26 12:05:20 ✅ Đã thêm 1 round mới vào C14, bắt đầu từ id = 62
+[SOCKET EMIT] new_round_completed C14 winner=P status=GP_WINNER
+[SOCKET EMIT] fe_result_visible C09 winner=- (FE ra kết quả)
+[API SCREENSHOT NOTIFY] C08 (NS4) Round #29, Winner: T -> C:\apps\bot-keo-nhom-bcr-main\public\screenshots\sexy_C08_R29_WT_2026-08-26T05-05-22-993Z.png
+[SOCKET EMIT] fe_result_visible C05 winner=- (FE ra kết quả)
+[SOCKET EMIT] fe_result_visible C05 winner=- (FE ra kết quả)
+[ACTIVE TABLE] CLEARED (NS3) — chờ Playwright vào bàn
+2026-08-26 12:05:26 ✅ Đã thêm 1 round mới vào C05, bắt đầu từ id = 9
+[SOCKET EMIT] new_round_completed C05 winner=P status=GP_WINNER
+[SOCKET EMIT] fe_result_visible C20 winner=- (FE ra kết quả)
+[SOCKET EMIT] fe_result_visible C01 winner=- (FE ra kết quả)
+2026-08-26 12:05:26 ✅ Đã thêm 1 round mới vào 5, bắt đầu từ id = 23
+[SOCKET EMIT] new_round_completed C05 winner=B status=GP_WINNER
+[SOCKET EMIT] fe_result_visible C04 winner=- (FE ra kết quả)
+[ACTIVE TABLE] CLEARED (NS4) — chờ Playwright vào bàn
+1K
+2K
+5K
+10K
+Xác nhận
+Lặp lại
+No Comm
+200
+-
+500,000
+Reload
+2
+BP
+0
+PP
+0
+
+B Ask
+
+P Ask')
+✅ [SIGNAL] Đã click làm mới DOM thành công!
+[SHUTDOWN] SIGINT — đóng browser và nhả account lock
+[BROWSER] closeHard (SIGINT)
+[ACCOUNT] index=1 NS=NS1 user=bosdx22
+[ACCOUNT LOCK] user=bosdx22 pid=13792
+(SOCKET) Connecting
+[BROWSER] engine=firefox headless=true (1 instance)
+[BROWSER] headless=true engine=firefox UA=Chrome-compatible
+[BROWSER] Click logger OFF (set DEBUG_CLICKS=1 nếu cần soi class)
+2026-08-26 11:10:52 BẮT ĐẦU CHƯƠNG TRÌNH FIREFOX - GHI LOGS
+2026-08-26 11:10:52 ==================================================
+2026-08-26 11:10:52 Đang truy cập: https://www.rr9900.com
+2026-08-26 11:10:52 🧹 [CLEAR] Đã xóa active_table cũ — chờ vào bàn rồi mới báo bot
+[SHUTDOWN] SIGINT — đóng browser và nhả account lock
+[BROWSER] closeHard (SIGINT)
+8.3K
+227
+Nhà cái
+1:0.95
+25%
+176.4K
+409
+Long Bảo
+1
+2
+5
+10
+20
+Xác nhận
+Lặp lại
+No Comm
+10
+-
+500
+Reload
+2
+BP
+1
+PP
+0
+
+B Ask
+
+P Ask
+
+Tay con
+8
+Nhà cái
+1')
+✅ [SIGNAL] Đã click làm mới DOM thành công!
+Nhà cái
+1:0.95
+14%
+100.7K
+312
+Long Bảo
+1
+2
+5
+10
+20
+Xác nhận
+Lặp lại
+No Comm
+10
+-
+500
+Reload
+2
+BP
+0
+PP
+1
+
+B Ask
+
+P Ask
+
+Tay con
+0
+Nhà cái
+0')
+✅ [SIGNAL] Đã click làm mới DOM thành công!
+2026-08-26 12:05:26 🧹 [CLEAR] Đã xóa active_table cũ — chờ vào bàn rồi mới báo bot
+[ENTER] attempt 1/3 — đóng popup rồi click bàn trống
+61.2K
+177
+Hòa
+1:8
+713
+33
+Nhà cái
+1:0.95
+39%
+38.4K
+107
+Long Bảo
+1
+2
+5
+10
+20
+Xác nhận
+Lặp lại
+No Comm
+10
+-
+500
+Reload
+2
+BP
+3
+PP
+0
+
+B Ask
+
+P Ask')
+✅ [SIGNAL] Đã click làm mới DOM thành công!
+2026-08-26 12:05:30 🧹 [CLEAR] Đã xóa active_table cũ — chờ vào bàn rồi mới báo bot
+
+==================== TAIL OF forward_bot_out.log ====================
+
+==================== TAIL OF server-out.log ====================
+
+==================== TAIL OF session1-out.log ====================
+
+==================== TAIL OF session2-out.log ====================
+
+==================== TAIL OF session3-out.log ====================
+
+==================== TAIL OF session4-out.log ====================

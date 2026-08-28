@@ -79,7 +79,7 @@ function listTablesInDocumentEval() {
 }
 
 /** Click card/text khớp prefer. allowFallback=false → miss nếu không thấy. */
-function clickTableByCodeEval({ prefer, allowFallback }) {
+function clickTableByCodeEval({ prefer, allowFallback, doubleClick = false }) {
   const parseCode = (txt) => {
     const t = String(txt || "");
     const m1 = t.match(/Baccarat\s+(C\d+)/i);
@@ -98,44 +98,61 @@ function clickTableByCodeEval({ prefer, allowFallback }) {
   };
   const want = prefer ? norm(prefer) : null;
 
-  const clickEl = (el) => {
-    const code = norm(parseCode(el.innerText || el.textContent || ""));
+  const fireClick = (el) => {
     try {
       el.scrollIntoView({ block: "center", inline: "center" });
     } catch (_) {}
-    const evt = new MouseEvent("click", {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-    });
-    el.dispatchEvent(evt);
-    if (el.click) el.click();
-    return code;
+    const types = [
+      "pointerover",
+      "pointerenter",
+      "mouseover",
+      "mouseenter",
+      "pointerdown",
+      "mousedown",
+      "mouseup",
+      "pointerup",
+      "click",
+    ];
+    const run = () => {
+      for (const type of types) {
+        el.dispatchEvent(
+          new MouseEvent(type, { bubbles: true, cancelable: true, view: window })
+        );
+      }
+      if (el.click) el.click();
+    };
+    run();
+    if (doubleClick) run();
+    return norm(parseCode(el.innerText || el.textContent || ""));
   };
 
+  const pickClickTarget = (card) =>
+    card.querySelector("div.relative.cursor-pointer canvas") ||
+    card.querySelector("div.relative.cursor-pointer video") ||
+    card.querySelector("div.relative.cursor-pointer img") ||
+    card.querySelector("div.relative.cursor-pointer") ||
+    card.querySelector(".table-item") ||
+    card;
+
   const tableCards = Array.from(
-    document.querySelectorAll(
-      ".vue-recycle-scroller__item-view, .table-item, div.relative.cursor-pointer, [class*='card']"
-    )
+    document.querySelectorAll(".vue-recycle-scroller__item-view, .table-item")
   );
 
   if (want) {
     for (const card of tableCards) {
       const code = norm(parseCode(card.innerText || card.textContent || ""));
-      if (code === want) {
-        clickEl(card);
-        return { ok: true, table: code, via: "by_code_card" };
-      }
-    }
-    const match = Array.from(
-      document.querySelectorAll("div, span, button, a")
-    ).find((el) => {
-      const code = norm(parseCode(el.innerText || el.textContent || ""));
-      return code === want;
-    });
-    if (match) {
-      const code = clickEl(match);
-      return { ok: true, table: code, via: "by_code_text" };
+      if (code !== want) continue;
+      const target = pickClickTarget(card);
+      fireClick(target);
+      return {
+        ok: true,
+        table: code,
+        via: doubleClick ? "eval_pointer_dblclick" : "eval_pointer_click",
+        target: {
+          tag: target.tagName,
+          cls: String(target.className || "").slice(0, 80),
+        },
+      };
     }
     if (!allowFallback) {
       return { ok: false, table: null, via: "miss" };
@@ -144,7 +161,8 @@ function clickTableByCodeEval({ prefer, allowFallback }) {
 
   if (tableCards.length > 0) {
     const card = tableCards[0];
-    const code = clickEl(card);
+    const code = norm(parseCode(card.innerText || card.textContent || ""));
+    fireClick(pickClickTarget(card));
     return { ok: true, table: code, via: "fallback_first" };
   }
   return { ok: false, table: null, via: "empty" };
@@ -204,9 +222,40 @@ async function listTablesFromFrame(frame, { scrolls = 4 } = {}) {
   });
 }
 
-async function clickTableByCode(frame, tableCode, { allowFallback = false } = {}) {
+async function clickTableByCode(frame, tableCode, { allowFallback = false, doubleClick = false } = {}) {
   if (!frame) return { ok: false, table: null, via: "no_frame" };
   const want = normTableCode(tableCode);
+
+  const firePointerClick = async (loc, via) => {
+    await loc.scrollIntoViewIfNeeded().catch(() => {});
+    if (doubleClick) {
+      await loc.dblclick({ timeout: 5000 });
+    } else {
+      await loc.click({ timeout: 5000 });
+    }
+    return { ok: true, table: want, via };
+  };
+
+  // Playwright trusted click — ưu tiên trước evaluate (synthetic click không mở bàn)
+  try {
+    const card = frame
+      .locator(".vue-recycle-scroller__item-view, .table-item")
+      .filter({ hasText: new RegExp(`Baccarat\\s+${want}\\b`, "i") })
+      .first();
+    if ((await card.count().catch(() => 0)) > 0) {
+      const pointer = card.locator("div.relative.cursor-pointer").first();
+      if ((await pointer.count().catch(() => 0)) > 0) {
+        return firePointerClick(
+          pointer,
+          doubleClick ? "card_pointer_dblclick" : "card_pointer_click"
+        );
+      }
+      return firePointerClick(
+        card,
+        doubleClick ? "card_wrapper_dblclick" : "card_wrapper_click"
+      );
+    }
+  } catch (_) {}
 
   const findCardHandle = async () => {
     const handle = await frame.evaluateHandle((prefer) => {
@@ -244,17 +293,19 @@ async function clickTableByCode(frame, tableCode, { allowFallback = false } = {}
           for (let p = el; p && p !== document.body; p = p.parentElement) n += 1;
           return n;
         };
-        return depth(b) - depth(a);
+        return depth(a) - depth(b);
       });
       for (const card of matching) {
         const clickTarget =
+          card.querySelector("div.relative.cursor-pointer") ||
           (card.matches(
             "div.relative.cursor-pointer, .table-item, button, a, [role='button'], [onclick]"
           )
             ? card
             : card.querySelector(
                 "div.relative.cursor-pointer, .table-item, button, a, [role='button'], [onclick]"
-              )) || card;
+              )) ||
+          card;
         if (clickTarget) {
           try {
             clickTarget.scrollIntoView({ block: "center", inline: "center" });
@@ -298,17 +349,41 @@ async function clickTableByCode(frame, tableCode, { allowFallback = false } = {}
               .slice(0, 80),
           }))
           .catch(() => null);
-        await el.click({ force: true, timeout: 2000 });
+        const box = await el.boundingBox().catch(() => null);
+        const pg = typeof frame.page === "function" ? frame.page() : null;
+        if (box && pg && box.width > 40 && box.height > 40) {
+          const cx = box.x + box.width / 2;
+          const cy = box.y + box.height / 2;
+          await pg.mouse.move(cx, cy);
+          await pg.mouse.click(cx, cy, { clickCount: doubleClick ? 2 : 1, delay: 120 });
+          if (doubleClick) {
+            await new Promise((r) => setTimeout(r, 200));
+            await pg.mouse.click(cx, cy, { clickCount: 1 });
+          }
+          await el.dispose().catch(() => {});
+          return {
+            ok: true,
+            table: want,
+            via: doubleClick ? "mouse_dblclick" : "mouse_click",
+            target: info,
+          };
+        }
+        await el.click({ force: true, timeout: 2000, clickCount: doubleClick ? 2 : 1 });
         await el.dispose().catch(() => {});
-        return { ok: true, table: want, via: "pw_click", target: info };
+        return { ok: true, table: want, via: doubleClick ? "pw_dblclick" : "pw_click", target: info };
       } catch (_) {
         try {
-          await el.evaluate((node) => {
-            node.dispatchEvent(
-              new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
-            );
+          await el.evaluate((node, dbl) => {
+            const events = dbl
+              ? ["pointerdown", "mousedown", "mouseup", "click", "dblclick"]
+              : ["pointerdown", "mousedown", "mouseup", "click"];
+            for (const type of events) {
+              node.dispatchEvent(
+                new MouseEvent(type, { bubbles: true, cancelable: true, view: window })
+              );
+            }
             if (node.click) node.click();
-          });
+          }, doubleClick);
           await el.dispose().catch(() => {});
           return { ok: true, table: want, via: "el_click" };
         } catch (e2) {
@@ -323,6 +398,7 @@ async function clickTableByCode(frame, tableCode, { allowFallback = false } = {}
   return frame.evaluate(clickTableByCodeEval, {
     prefer: want,
     allowFallback,
+    doubleClick,
   });
 }
 
