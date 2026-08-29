@@ -123,9 +123,11 @@ def build_virtual_profit_text(bet_amount_label, outcome):
 
 def format_bet_text_with_amount(bet_text, bet_amount_label):
     amount = parse_bet_amount_numeric(bet_amount_label)
-    if amount > 0:
-        return f"{bet_text} {amount}"
-    return f"{bet_text} {bet_amount_label}"
+    suffix = str(amount) if amount > 0 else bet_amount_label
+    upper = bet_text.upper()
+    if 'CON' in upper or '🔵' in bet_text:
+        return f"🎯 <b>LỆNH HÔ</b> ⚡\n🔵 <b>CON {suffix}</b>"
+    return f"🎯 <b>LỆNH HÔ</b> ⚡\n🔴 <b>CÁI {suffix}</b>"
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 SCREENSHOT_DIR = os.path.join(ROOT_DIR, 'public', 'screenshots')
@@ -884,7 +886,7 @@ class TelegramForwardBot:
                 bet_side = random.choice(['P', 'B'])  # P=Con, B=Cái
                 bet_text_base = "🔵 CON" if bet_side == 'P' else "🔴 CÁI"
                 bet_text_to_send = format_bet_text_with_amount(bet_text_base, self.bet_amount_label)
-                await send_text(bet_text_to_send, "Đã gửi tin HÔ (Ảo)")
+                await send_text(bet_text_to_send, "Đã gửi tin HÔ (Ảo)", parse_mode='html')
 
                 # 3. Chờ 20s cho ván bài lật xong
                 self.log(f"Đã hô lệnh ({bet_text_to_send}). Chờ cố định 20s cho ván bài lật xong...")
@@ -985,7 +987,7 @@ class TelegramForwardBot:
             # Định dạng lệnh hô
             bet_text_to_send = format_bet_text_with_amount(bet_text, self.bet_amount_label)
 
-            await send_text(bet_text_to_send, f"Đã gửi tin HÔ (lấy trực tiếp theo bàn {self.session_table})")
+            await send_text(bet_text_to_send, f"Đã gửi tin HÔ (lấy trực tiếp theo bàn {self.session_table})", parse_mode='html')
 
             # ĐẶT CƯỢC TỰ ĐỘNG TRÊN TRANG GAME
             try:
