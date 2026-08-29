@@ -74,6 +74,60 @@ def get_account_by_id(account_id):
             return acc
     return None
 
+def parse_bet_amount_numeric(label):
+    """'500' -> 500, '5000' -> 5000. Label có % thì trả 0 (chế độ %)."""
+    raw = str(label or "").strip()
+    if "%" in raw:
+        return 0
+    try:
+        return int(float(raw.replace(",", "")))
+    except ValueError:
+        return 0
+
+def build_profit_result_text(bet_amount_label, norm_winner, norm_bet):
+    """Thay Húp/Thua bằng: lợi nhuận ca này -500 / +500"""
+    amount = parse_bet_amount_numeric(bet_amount_label)
+    if amount <= 0:
+        # Fallback % mode (giữ tương thích cũ)
+        if norm_winner == "T" or not norm_winner:
+            return "lợi nhuận ca này 0"
+        if norm_winner == norm_bet:
+            return "lợi nhuận ca này +10%"
+        return "lợi nhuận ca này -10%"
+
+    if norm_winner == "T" or not norm_winner:
+        pnl = 0
+    elif norm_winner == norm_bet:
+        pnl = int(round(amount * 0.95)) if norm_bet == "B" else amount
+    else:
+        pnl = -amount
+
+    if pnl > 0:
+        return f"lợi nhuận ca này +{pnl}"
+    if pnl < 0:
+        return f"lợi nhuận ca này {pnl}"
+    return "lợi nhuận ca này 0"
+
+def build_virtual_profit_text(bet_amount_label, outcome):
+    amount = parse_bet_amount_numeric(bet_amount_label) or 500
+    if outcome == "WIN":
+        pnl = amount
+    elif outcome == "LOSS":
+        pnl = -amount
+    else:
+        pnl = 0
+    if pnl > 0:
+        return f"lợi nhuận ca này +{pnl}"
+    if pnl < 0:
+        return f"lợi nhuận ca này {pnl}"
+    return "lợi nhuận ca này 0"
+
+def format_bet_text_with_amount(bet_text, bet_amount_label):
+    amount = parse_bet_amount_numeric(bet_amount_label)
+    if amount > 0:
+        return f"{bet_text} {amount}"
+    return f"{bet_text} {bet_amount_label}"
+
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 SCREENSHOT_DIR = os.path.join(ROOT_DIR, 'public', 'screenshots')
 
@@ -802,7 +856,7 @@ class TelegramForwardBot:
                 # Gửi ảnh chụp bàn báo bàn sang nhóm báo bàn riêng (nếu có cấu hình)
                 if self.config.get('send_table_preview'):
                     preview_shot = get_latest_local_screenshot_for_table(self.session_table) or get_any_table_preview_screenshot()
-                    caption_template = self.config.get('send_table_preview_caption', '🎲 BÀN CƯỢC: BACCARAT {table} | CHUẨN BỊ VÀO LỆNH NÀO AE 💸')
+                    caption_template = self.config.get('send_table_preview_caption', '🎰 SẢNH SEXY BÀN : {table} 💎')
                     preview_caption = str(caption_template).replace('{table}', self.session_table)
                     
                     target_preview_group = self.config.get('table_preview_group_id', self.group_id)
@@ -828,7 +882,7 @@ class TelegramForwardBot:
 
                 bet_side = random.choice(['P', 'B'])  # P=Con, B=Cái
                 bet_text_base = "🔵 CON" if bet_side == 'P' else "🔴 CÁI"
-                bet_text_to_send = f"{bet_text_base} {self.bet_amount_label}"
+                bet_text_to_send = format_bet_text_with_amount(bet_text_base, self.bet_amount_label)
                 await send_text(bet_text_to_send, "Đã gửi tin HÔ (Ảo)")
 
                 # 3. Chờ 20s cho ván bài lật xong
@@ -859,21 +913,16 @@ class TelegramForwardBot:
 
                 await asyncio.sleep(10)
 
-                # 5. Gửi tin kết quả
-                if outcome == 'WIN':
-                    result_text = f"🎉 Húp +{self.bet_amount_label}"
-                elif outcome == 'LOSS':
-                    result_text = f"❌ Thua -{self.bet_amount_label}"
-                else:
-                    result_text = "🤝 Hòa +0"
+                # 5. Gửi tin lợi nhuận ca này
+                result_text = build_virtual_profit_text(self.bet_amount_label, outcome)
 
                 self.log(f"[XÁC ĐỊNH KẾT QUẢ ẢO] Kèo hô={bet_text_to_send} | Outcome={outcome} | Trả tin: {result_text}")
                 await send_text(result_text, f"Đã gửi tin KẾT QUẢ ẢO ({outcome}): {result_text}")
                 await asyncio.sleep(20)
 
                 # 6. Chốt ca bằng Ảnh 3 (index 2)
-                ending_order = self.config.get('ending_order', [2])
-                ending_delays = self.config.get('ending_delays', [20] * len(ending_order))
+                ending_order = self.config.get('ending_order', [4, 5])
+                ending_delays = self.config.get('ending_delays', [20, 20])
                 for step_num, idx in enumerate(ending_order):
                     await forward_idx(idx, f"Tin kết thúc (tin thứ {idx + 1}, index {idx})")
                     delay = ending_delays[step_num] if step_num < len(ending_delays) else 20
@@ -902,7 +951,7 @@ class TelegramForwardBot:
             preview_shot = None
             if self.config.get('send_table_preview'):
                 preview_shot = get_latest_local_screenshot_for_table(self.session_table)
-                caption_template = self.config.get('send_table_preview_caption', '🎲 BÀN CƯỢC: BACCARAT {table} | CHUẨN BỊ VÀO LỆNH NÀO AE 💸')
+                caption_template = self.config.get('send_table_preview_caption', '🎰 SẢNH SEXY BÀN : {table} 💎')
                 preview_caption = str(caption_template).replace('{table}', self.session_table)
                 
                 target_preview_group = self.config.get('table_preview_group_id', self.group_id)
@@ -933,18 +982,13 @@ class TelegramForwardBot:
             bet_time_ms = int(time.time() * 1000)  # Ghi nhận mốc thời gian hô lệnh
 
             # Định dạng lệnh hô
-            if self.bet_amount_label == "5000":
-                bet_text_to_send = f"{bet_text} 5000"
-            elif self.bet_amount_label == "1000":
-                bet_text_to_send = f"{bet_text} 1000"
-            else:
-                bet_text_to_send = f"{bet_text} {self.bet_amount_label}"
+            bet_text_to_send = format_bet_text_with_amount(bet_text, self.bet_amount_label)
 
             await send_text(bet_text_to_send, f"Đã gửi tin HÔ (lấy trực tiếp theo bàn {self.session_table})")
 
-            # ĐẶT CƯỢC TỰ ĐỘNG TRÊN TRANG GAME: Gửi lệnh đặt cược đồng bộ theo đúng bàn và cửa vừa hô
+            # ĐẶT CƯỢC TỰ ĐỘNG TRÊN TRANG GAME
             try:
-                bet_amt = 5000 if self.bet_amount_label == "5000" else (1000 if self.bet_amount_label == "1000" else None)
+                bet_amt = parse_bet_amount_numeric(self.bet_amount_label) or None
                 request_place_bet_api(self.session_table, bet_side, self.name_service, bet_amt)
             except Exception as e:
                 self.log(f"[AUTO BET ERROR]: {e}")
@@ -996,36 +1040,15 @@ class TelegramForwardBot:
 
             norm_winner = winner_from_filename or normalize_side(raw_winner)
             norm_bet = normalize_side(bet_side)
-
-            if self.bet_amount_label == "5000":
-                if norm_winner == 'T':
-                    result_text = "🤝 Hòa +0"
-                elif norm_winner == norm_bet:
-                    result_text = "🎉 Húp +5000"
-                else:
-                    result_text = "❌ Thua -5000"
-            elif self.bet_amount_label == "1000":
-                if norm_winner == 'T':
-                    result_text = "🤝 Hòa +0"
-                elif norm_winner == norm_bet:
-                    result_text = "🎉 Húp +1000"
-                else:
-                    result_text = "❌ Thua -1000"
-            else:
-                if norm_winner == 'T':
-                    result_text = "🤝 Hòa +0%"
-                elif norm_winner == norm_bet:
-                    result_text = "🎉 Húp +10%"
-                else:
-                    result_text = "❌ Thua -10%"
+            result_text = build_profit_result_text(self.bet_amount_label, norm_winner, norm_bet)
 
             self.log(f"[XÁC ĐỊNH KẾT QUẢ] Kèo hô={bet_text_to_send} ({norm_bet}) | Bàn mở ra={norm_winner} | Trả tin: {result_text}")
             await send_text(result_text, f"Đã gửi tin KẾT QUẢ (Ván bàn {self.session_table} ra {norm_winner})")
             await asyncio.sleep(20)
 
-            # 5. Gửi tin/ảnh kết thúc chốt ca
-            ending_order = self.config.get('ending_order', [4])
-            ending_delays = self.config.get('ending_delays', [20])
+            # 6. Gửi tin 5 + 6 từ @frezeit (index 4, 5)
+            ending_order = self.config.get('ending_order', [4, 5])
+            ending_delays = self.config.get('ending_delays', [20, 20])
             for step_num, idx in enumerate(ending_order):
                 await forward_idx(idx, f"Tin kết thúc (tin thứ {idx + 1}, index {idx})")
                 delay = ending_delays[step_num] if step_num < len(ending_delays) else 20
@@ -1084,8 +1107,8 @@ async def run_single_bot_schedule(bot, all_bots):
                                 messages.append(m)
                             messages.sort(key=lambda x: x.id)
                             
-                            if len(messages) < 5:
-                                bot.log(f"[WARN] Nguồn @{bot.source_username} chưa đủ 5 tin.")
+                            if len(messages) < 6:
+                                bot.log(f"[WARN] Nguồn @{bot.source_username} chưa đủ 6 tin (cần tin 1-4 + tin 5-6).")
                             else:
                                 # Lấy danh sách các bàn mà các bot khác đang sử dụng
                                 other_tables = [
