@@ -689,7 +689,9 @@ class TelegramForwardBot:
             self.preferred_sessions = ['NS3']
         
         phone_digits = ''.join(c for c in self.phone if c.isdigit())
-        self.session_name = f'user_session_{phone_digits}' if phone_digits else f'user_session_{self.bot_id}'
+        self.session_name = config.get('session_name') or (
+            f'user_session_{phone_digits}' if phone_digits else f'user_session_{self.bot_id}'
+        )
         self.client = None
         self.dialog_cache = {}
 
