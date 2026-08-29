@@ -85,12 +85,12 @@ def parse_bet_amount_numeric(label):
         return 0
 
 def format_profit_message(pnl):
-    """Tin lợi nhuận HTML: chữ đậm + icon theo thắng/thua/hòa."""
+    """Tin lợi nhuận HTML đơn giản, chữ đậm."""
     if pnl > 0:
-        return f"💰 <b>LỢI NHUẬN CA NÀY</b> 🔥\n✅ <b>+{pnl}</b>"
+        return f"💰 <b>LỢI NHUẬN CA NÀY +{pnl}🔥</b>"
     if pnl < 0:
-        return f"📉 <b>LỢI NHUẬN CA NÀY</b> 💸\n❌ <b>{pnl}</b>"
-    return f"➖ <b>LỢI NHUẬN CA NÀY</b>\n<b>0</b>"
+        return f"💰 <b>LỢI NHUẬN CA NÀY {pnl}</b>"
+    return f"💰 <b>LỢI NHUẬN CA NÀY 0</b>"
 
 def build_profit_result_text(bet_amount_label, norm_winner, norm_bet):
     """Thay Húp/Thua bằng tin lợi nhuận có format đẹp."""
@@ -99,8 +99,8 @@ def build_profit_result_text(bet_amount_label, norm_winner, norm_bet):
         if norm_winner == "T" or not norm_winner:
             return format_profit_message(0)
         if norm_winner == norm_bet:
-            return "💰 <b>LỢI NHUẬN CA NÀY</b> 🔥\n✅ <b>+10%</b>"
-        return "📉 <b>LỢI NHUẬN CA NÀY</b> 💸\n❌ <b>-10%</b>"
+            return "💰 <b>LỢI NHUẬN CA NÀY +10%🔥</b>"
+        return "💰 <b>LỢI NHUẬN CA NÀY -10%</b>"
 
     if norm_winner == "T" or not norm_winner:
         pnl = 0
@@ -126,8 +126,8 @@ def format_bet_text_with_amount(bet_text, bet_amount_label):
     suffix = str(amount) if amount > 0 else bet_amount_label
     upper = bet_text.upper()
     if 'CON' in upper or '🔵' in bet_text:
-        return f"🎯 <b>LỆNH HÔ</b> ⚡\n🔵 <b>CON {suffix}</b>"
-    return f"🎯 <b>LỆNH HÔ</b> ⚡\n🔴 <b>CÁI {suffix}</b>"
+        return f"🔵 <b>CON {suffix}</b>"
+    return f"🔴 <b>CÁI {suffix}</b>"
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 SCREENSHOT_DIR = os.path.join(ROOT_DIR, 'public', 'screenshots')
