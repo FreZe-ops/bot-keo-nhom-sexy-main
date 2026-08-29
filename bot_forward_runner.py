@@ -84,16 +84,23 @@ def parse_bet_amount_numeric(label):
     except ValueError:
         return 0
 
+def format_profit_message(pnl):
+    """Tin lợi nhuận HTML: chữ đậm + icon theo thắng/thua/hòa."""
+    if pnl > 0:
+        return f"💰 <b>LỢI NHUẬN CA NÀY</b> 🔥\n✅ <b>+{pnl}</b>"
+    if pnl < 0:
+        return f"📉 <b>LỢI NHUẬN CA NÀY</b> 💸\n❌ <b>{pnl}</b>"
+    return f"➖ <b>LỢI NHUẬN CA NÀY</b>\n<b>0</b>"
+
 def build_profit_result_text(bet_amount_label, norm_winner, norm_bet):
-    """Thay Húp/Thua bằng: lợi nhuận ca này -500 / +500"""
+    """Thay Húp/Thua bằng tin lợi nhuận có format đẹp."""
     amount = parse_bet_amount_numeric(bet_amount_label)
     if amount <= 0:
-        # Fallback % mode (giữ tương thích cũ)
         if norm_winner == "T" or not norm_winner:
-            return "lợi nhuận ca này 0"
+            return format_profit_message(0)
         if norm_winner == norm_bet:
-            return "lợi nhuận ca này +10%"
-        return "lợi nhuận ca này -10%"
+            return "💰 <b>LỢI NHUẬN CA NÀY</b> 🔥\n✅ <b>+10%</b>"
+        return "📉 <b>LỢI NHUẬN CA NÀY</b> 💸\n❌ <b>-10%</b>"
 
     if norm_winner == "T" or not norm_winner:
         pnl = 0
@@ -102,11 +109,7 @@ def build_profit_result_text(bet_amount_label, norm_winner, norm_bet):
     else:
         pnl = -amount
 
-    if pnl > 0:
-        return f"lợi nhuận ca này +{pnl}"
-    if pnl < 0:
-        return f"lợi nhuận ca này {pnl}"
-    return "lợi nhuận ca này 0"
+    return format_profit_message(pnl)
 
 def build_virtual_profit_text(bet_amount_label, outcome):
     amount = parse_bet_amount_numeric(bet_amount_label) or 500
@@ -116,11 +119,7 @@ def build_virtual_profit_text(bet_amount_label, outcome):
         pnl = -amount
     else:
         pnl = 0
-    if pnl > 0:
-        return f"lợi nhuận ca này +{pnl}"
-    if pnl < 0:
-        return f"lợi nhuận ca này {pnl}"
-    return "lợi nhuận ca này 0"
+    return format_profit_message(pnl)
 
 def format_bet_text_with_amount(bet_text, bet_amount_label):
     amount = parse_bet_amount_numeric(bet_amount_label)
@@ -825,15 +824,15 @@ class TelegramForwardBot:
                     except Exception as ex:
                         self.log(f"[LỖI FORWARD index {index}]: {ex}")
 
-            async def send_text(txt, label):
+            async def send_text(txt, label, parse_mode=None):
                 try:
                     await self.ensure_connected()
-                    await self.client.send_message(entity, txt)
+                    await self.client.send_message(entity, txt, parse_mode=parse_mode)
                     self.log(f"{label}: {txt}")
                 except FloodWaitError as fe:
                     await asyncio.sleep(fe.seconds + 1)
                     await self.ensure_connected()
-                    await self.client.send_message(entity, txt)
+                    await self.client.send_message(entity, txt, parse_mode=parse_mode)
                 except Exception as ex:
                     self.log(f"[LỖI SEND TEXT]: {ex}")
 
@@ -919,7 +918,7 @@ class TelegramForwardBot:
                 result_text = build_virtual_profit_text(self.bet_amount_label, outcome)
 
                 self.log(f"[XÁC ĐỊNH KẾT QUẢ ẢO] Kèo hô={bet_text_to_send} | Outcome={outcome} | Trả tin: {result_text}")
-                await send_text(result_text, f"Đã gửi tin KẾT QUẢ ẢO ({outcome}): {result_text}")
+                await send_text(result_text, f"Đã gửi tin KẾT QUẢ ẢO ({outcome}): {result_text}", parse_mode='html')
                 await asyncio.sleep(20)
 
                 # 6. Chốt ca bằng Ảnh 3 (index 2)
@@ -1045,7 +1044,7 @@ class TelegramForwardBot:
             result_text = build_profit_result_text(self.bet_amount_label, norm_winner, norm_bet)
 
             self.log(f"[XÁC ĐỊNH KẾT QUẢ] Kèo hô={bet_text_to_send} ({norm_bet}) | Bàn mở ra={norm_winner} | Trả tin: {result_text}")
-            await send_text(result_text, f"Đã gửi tin KẾT QUẢ (Ván bàn {self.session_table} ra {norm_winner})")
+            await send_text(result_text, f"Đã gửi tin KẾT QUẢ (Ván bàn {self.session_table} ra {norm_winner})", parse_mode='html')
             await asyncio.sleep(20)
 
             # 6. Gửi tin 5 + 6 từ @frezeit (index 4, 5)
