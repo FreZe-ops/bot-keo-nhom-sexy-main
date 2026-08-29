@@ -84,6 +84,10 @@ def parse_bet_amount_numeric(label):
     except ValueError:
         return 0
 
+def uses_pnl_messages(config):
+    """Chỉ nhóm mới (bot 9/10) dùng format lợi nhuận + lệnh hô in đậm."""
+    return str((config or {}).get('profit_style', 'legacy')).lower() == 'pnl'
+
 def format_profit_message(pnl):
     """Tin lợi nhuận HTML đơn giản, chữ đậm."""
     if pnl > 0:
@@ -120,6 +124,52 @@ def build_virtual_profit_text(bet_amount_label, outcome):
     else:
         pnl = 0
     return format_profit_message(pnl)
+
+def format_bet_text_legacy(bet_text, bet_amount_label):
+    label = str(bet_amount_label or '').strip()
+    if label == "5000":
+        return f"{bet_text} 5000"
+    if label == "1000":
+        return f"{bet_text} 1000"
+    return f"{bet_text} {label}"
+
+def format_bet_for_config(config, bet_text):
+    label = config.get('bet_amount_label', '10%')
+    if uses_pnl_messages(config):
+        return format_bet_text_with_amount(bet_text, label)
+    return format_bet_text_legacy(bet_text, label)
+
+def build_virtual_result_for_config(config, outcome):
+    label = config.get('bet_amount_label', '10%')
+    if uses_pnl_messages(config):
+        return build_virtual_profit_text(label, outcome)
+    if outcome == 'WIN':
+        return f"🎉 Húp +{label}"
+    if outcome == 'LOSS':
+        return f"❌ Thua -{label}"
+    return "🤝 Hòa +0"
+
+def build_real_result_for_config(config, norm_winner, norm_bet):
+    label = config.get('bet_amount_label', '10%')
+    if uses_pnl_messages(config):
+        return build_profit_result_text(label, norm_winner, norm_bet)
+    if label == "5000":
+        if norm_winner == 'T':
+            return "🤝 Hòa +0"
+        if norm_winner == norm_bet:
+            return "🎉 Húp +5000"
+        return "❌ Thua -5000"
+    if label == "1000":
+        if norm_winner == 'T':
+            return "🤝 Hòa +0"
+        if norm_winner == norm_bet:
+            return "🎉 Húp +1000"
+        return "❌ Thua -1000"
+    if norm_winner == 'T':
+        return "🤝 Hòa +0%"
+    if norm_winner == norm_bet:
+        return "🎉 Húp +10%"
+    return "❌ Thua -10%"
 
 def format_bet_text_with_amount(bet_text, bet_amount_label):
     amount = parse_bet_amount_numeric(bet_amount_label)
@@ -885,8 +935,12 @@ class TelegramForwardBot:
 
                 bet_side = random.choice(['P', 'B'])  # P=Con, B=Cái
                 bet_text_base = "🔵 CON" if bet_side == 'P' else "🔴 CÁI"
-                bet_text_to_send = format_bet_text_with_amount(bet_text_base, self.bet_amount_label)
-                await send_text(bet_text_to_send, "Đã gửi tin HÔ (Ảo)", parse_mode='html')
+                bet_text_to_send = format_bet_for_config(self.config, bet_text_base)
+                await send_text(
+                    bet_text_to_send,
+                    "Đã gửi tin HÔ (Ảo)",
+                    parse_mode='html' if uses_pnl_messages(self.config) else None,
+                )
 
                 # 3. Chờ 20s cho ván bài lật xong
                 self.log(f"Đã hô lệnh ({bet_text_to_send}). Chờ cố định 20s cho ván bài lật xong...")
@@ -917,10 +971,14 @@ class TelegramForwardBot:
                 await asyncio.sleep(10)
 
                 # 5. Gửi tin lợi nhuận ca này
-                result_text = build_virtual_profit_text(self.bet_amount_label, outcome)
+                result_text = build_virtual_result_for_config(self.config, outcome)
 
                 self.log(f"[XÁC ĐỊNH KẾT QUẢ ẢO] Kèo hô={bet_text_to_send} | Outcome={outcome} | Trả tin: {result_text}")
-                await send_text(result_text, f"Đã gửi tin KẾT QUẢ ẢO ({outcome}): {result_text}", parse_mode='html')
+                await send_text(
+                    result_text,
+                    f"Đã gửi tin KẾT QUẢ ẢO ({outcome}): {result_text}",
+                    parse_mode='html' if uses_pnl_messages(self.config) else None,
+                )
                 await asyncio.sleep(20)
 
                 # 6. Chốt ca bằng Ảnh 3 (index 2)
@@ -985,9 +1043,13 @@ class TelegramForwardBot:
             bet_time_ms = int(time.time() * 1000)  # Ghi nhận mốc thời gian hô lệnh
 
             # Định dạng lệnh hô
-            bet_text_to_send = format_bet_text_with_amount(bet_text, self.bet_amount_label)
+            bet_text_to_send = format_bet_for_config(self.config, bet_text)
 
-            await send_text(bet_text_to_send, f"Đã gửi tin HÔ (lấy trực tiếp theo bàn {self.session_table})", parse_mode='html')
+            await send_text(
+                bet_text_to_send,
+                f"Đã gửi tin HÔ (lấy trực tiếp theo bàn {self.session_table})",
+                parse_mode='html' if uses_pnl_messages(self.config) else None,
+            )
 
             # ĐẶT CƯỢC TỰ ĐỘNG TRÊN TRANG GAME
             try:
@@ -1043,10 +1105,14 @@ class TelegramForwardBot:
 
             norm_winner = winner_from_filename or normalize_side(raw_winner)
             norm_bet = normalize_side(bet_side)
-            result_text = build_profit_result_text(self.bet_amount_label, norm_winner, norm_bet)
+            result_text = build_real_result_for_config(self.config, norm_winner, norm_bet)
 
             self.log(f"[XÁC ĐỊNH KẾT QUẢ] Kèo hô={bet_text_to_send} ({norm_bet}) | Bàn mở ra={norm_winner} | Trả tin: {result_text}")
-            await send_text(result_text, f"Đã gửi tin KẾT QUẢ (Ván bàn {self.session_table} ra {norm_winner})", parse_mode='html')
+            await send_text(
+                result_text,
+                f"Đã gửi tin KẾT QUẢ (Ván bàn {self.session_table} ra {norm_winner})",
+                parse_mode='html' if uses_pnl_messages(self.config) else None,
+            )
             await asyncio.sleep(20)
 
             # 6. Gửi tin 5 + 6 từ @frezeit (index 4, 5)
