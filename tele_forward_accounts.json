@@ -192,7 +192,7 @@
       "api_id": 38676417,
       "api_hash": "531c255a36ba50727f85bed6c4cbbb48",
       "session_name": "user_session_84782717585",
-      "twofa": "",
+      "twofa": "123",
       "group_id": "-1004406728814",
       "table_preview_group_id": "-1004461211867",
       "name_service": "NS2",
@@ -217,7 +217,7 @@
       "api_id": 38676417,
       "api_hash": "531c255a36ba50727f85bed6c4cbbb48",
       "session_name": "user_session_84782717585",
-      "twofa": "",
+      "twofa": "123",
       "group_id": "-1004399779390",
       "table_preview_group_id": "-1004461211867",
       "name_service": "NS2",
@@ -233,8 +233,7 @@
       "tie_rate": 0.05,
       "opening_order": [0, 1, 2, 3],
       "opening_delays": [20, 20, 20, 20],
-      "send_table_preview": true,
-      "send_table_preview_caption": "🎰 SẢNH SEXY BÀN : {table} 💎",
+      "send_table_preview": false,
       "ending_order": [4, 5],
       "ending_delays": [20, 20]
     }
